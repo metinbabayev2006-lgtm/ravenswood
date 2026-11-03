@@ -1,0 +1,35 @@
+name: Spiel zum Herunterladen
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: offline-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run offline
+      - name: ZIP erstellen
+        run: |
+          cd offline
+          zip -9 ../Ravenswood-Offline.zip Ravenswood.html LIES-MICH.txt
+      - name: Prüfsumme erstellen
+        run: sha256sum Ravenswood-Offline.zip > Ravenswood-Offline.zip.sha256
+      - name: Download veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          printf 'ZIP herunterladen, vollständig entpacken und Ravenswood.html im Browser öffnen. Keine Installation nötig.\n\nQuellstand: %s\n' "$GITHUB_SHA" > release-notes.md
+          gh release create "build-$GITHUB_RUN_NUMBER" Ravenswood-Offline.zip Ravenswood-Offline.zip.sha256 --target "$GITHUB_SHA" --title "Ravenswood – Version $GITHUB_RUN_NUMBER" --notes-file release-notes.md --latest

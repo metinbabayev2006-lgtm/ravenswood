@@ -1,0 +1,11 @@
+node_modules/
+dist/
+offline/
+*.zip
+*.log
+.env*
+.openai/
+.sites*/
+.idea/
+.vscode/
+.DS_Store
