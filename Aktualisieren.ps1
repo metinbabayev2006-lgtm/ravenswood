@@ -9,7 +9,9 @@ if (-not (Test-Path -LiteralPath node_modules)) {
   npm ci
   if ($LASTEXITCODE -ne 0) { throw 'Installation fehlgeschlagen.' }
 }
-npm run offline
+npm test
+if ($LASTEXITCODE -ne 0) { throw 'Tests fehlgeschlagen; nichts hochgeladen.' }
+npm run build
 if ($LASTEXITCODE -ne 0) { throw 'Build fehlgeschlagen; nichts hochgeladen.' }
 git add --all
 if ($LASTEXITCODE -ne 0) { throw 'Dateien konnten nicht vorgemerkt werden.' }
@@ -20,5 +22,5 @@ if ($LASTEXITCODE -eq 1) {
 } elseif ($LASTEXITCODE -ne 0) { throw 'Änderungen konnten nicht geprüft werden.' }
 git push origin main
 if ($LASTEXITCODE -ne 0) { throw 'Upload fehlgeschlagen. Prüfe GitHub-Anmeldung und gegebenenfalls neuere Änderungen auf GitHub.' }
-Write-Host 'Hochgeladen. GitHub erstellt den Download unter:'
+Write-Host 'Hochgeladen. GitHub prüft die Multiplayer-Fassung unter:'
 Write-Host 'https://github.com/metinbabayev2006-lgtm/ravenswood/actions'

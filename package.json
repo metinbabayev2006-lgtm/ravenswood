@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "offline": "npm run build && node scripts/build-offline.mjs"
+    "server": "node --watch server/index.js",
+    "start": "node server/index.js",
+    "test": "node --test server/*.test.js"
   },
   "dependencies": {
     "@vercel/analytics": "^1.3.2",
@@ -16,7 +18,8 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "react-router-loader": "^0.5.4",
-    "react-toastify": "^10.0.6"
+    "react-toastify": "^10.0.6",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
