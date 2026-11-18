@@ -23,6 +23,16 @@ Diese Fassung enthält ausschließlich die Aufgabenbereiche **Matin und Sophie**
 
 **Jason und Max:** Karten, Kartenauswahl, Notizen, Verdacht und Anklage sind aus der aktiven Oberfläche und Serverlogik entfernt. Die Zimmerflächen bleiben für Matins Spielbrett und Zimmerzutritt nötig. Diese Fassung ist eine spielbare Multiplayer-Bewegungsdemo und kein vollständiges Detektivspiel mit Falllösung oder Siegbedingung.
 
+## Raum-Instanzen (2,5D)
+
+- Steht die eigene Figur in einem Zimmer, öffnet **„Raum untersuchen“** (im eigenen Zug) eine 2,5D-Ansicht dieses Zimmers. Alle neun Zimmer sind eingerichtet (Möbel mit Kollision, Licht, Fenster, Tür).
+- Laufen mit **WASD / Pfeiltasten** (am Handy per Steuerkreuz), **E** durchsucht Möbel, die Tür verlässt den Raum.
+- **Verstecke:** Zu Beginn jedes Spiels lost der Server pro Zimmer aus, in welchem Möbel etwas liegt (`shared/roomSpots.js`: `CLUES_PER_ROOM`). Pro Raumbesuch darf man `SEARCHES_PER_VISIT` (2) Möbel durchsuchen. Verstecke und Funde bleiben auf dem Server; jede Person sieht nur ihre eigenen Ergebnisse. Ein Fund ist derzeit `{ kind: 'hinweis' }` – für die Karten später `hideClues()` in `server/game.js` anpassen.
+- Im Raum gilt **kein Würfellimit**. Die Figur verschwindet vom Brett, ihre Position bleibt gespeichert; über dem Zimmer steht der Spielername. Der Zug geht an die Nächsten weiter – kommt man wieder an die Reihe, **warten alle**, bis man den Raum verlassen hat.
+- Neue Gegenstände: `src/rooms/roomData.js` (eine Zeile je Gegenstand). Ein neues Versteck braucht ein Feld `spot` und denselben Eintrag in `shared/roomSpots.js` – ein Test prüft, dass beide übereinstimmen. Die Texte sind nur Stimmung und sollen keine falsche Spur legen.
+- **Gemeinsame Instanz:** Alle, die dasselbe Zimmer betreten, sind in derselben Instanz und sehen sich live herumlaufen. Wer in einem anderen Zimmer ist, hat seine eigene Instanz.
+- Server: Aktionen `enterRoom` / `leaveRoom` in `server/game.js`, Zustand `inside` (`{ spielerId: zimmerId }`). Live-Positionen über `POST /api/rooms/:code/presence` (`server/presence.js`): nur im Arbeitsspeicher, nicht in `rooms.json`, eigenes Anfragelimit, ca. 6–7 Abgleiche pro Sekunde und Person, solange sich jemand bewegt.
+
 ## Online
 
 [Spielbrett öffnen](https://ravenswood.dazzlingelk.chatgpt.site)
@@ -57,6 +67,7 @@ Tests: Lobbygrenze, eindeutige Figuren, Gastgeberrechte, Zugangsschutz, 1–6 Te
 - `src/MovementControls.jsx`: Matins Zimmerauswahl und Eintrittsknopf.
 - `src/StartGame.jsx`: Sophies Start- und Beitrittsformular.
 - `src/App.jsx`: Lobby, Spieltisch und Anleitung.
+- `src/rooms/`: 2,5D-Raum-Instanzen (`RoomInstance.jsx` Ansicht, `roomData.js` Einrichtung, `roomRenderer.js` Zeichnen, `roomPhysics.js` Kollision, `roomTags3D.js`/`RoomTagsSvg.jsx` Namensschilder auf dem Brett).
 - `shared/game.js`: Figuren, Brettfelder und Wegberechnung.
 - `server/game.js`: erlaubte Lobby- und Bewegungsaktionen; keine Fall- oder Kartenlogik.
 - `server/index.js`: lokaler Node-Server, Speicherung in ignorierter Datei `data/rooms.json`.

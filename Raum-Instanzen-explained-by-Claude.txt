@@ -1,0 +1,335 @@
+RAVENSWOOD · RAUM-INSTANZEN (2,5D-RÄUME) – WIE ES FUNKTIONIERT
+================================================================
+
+Diese Datei erklärt, was der Patch „Raum-Instanzen“ macht, welche Dateien
+dazugehören und wie man daran weiterbaut. Sie ist für alle im Team gedacht,
+auch für die, die den Code nicht selbst geschrieben haben. h3h3
+
+
+1. WAS DIE FUNKTION MACHT
+-------------------------
+
+Steht deine Figur auf dem Spielbrett in einem der neun Zimmer (Küche,
+Ballsaal, Wintergarten, Speisezimmer, Billardzimmer, Salon, Halle,
+Arbeitszimmer, Bibliothek), erscheint im eigenen Zug der Knopf
+„Raum untersuchen“. Dann passiert Folgendes:
+
+  - Es öffnet sich eine Vollbild-Ansicht des Zimmers in 2,5D. Man läuft mit
+    WASD oder den Pfeiltasten (am Handy mit einem Steuerkreuz) herum.
+    Möbel haben Kollision, man kann nicht durch sie hindurch.
+  - Im Raum gilt kein Würfellimit. Man kann so lange herumlaufen, wie man will.
+  - Die Figur verschwindet vom Spielbrett, ihre Position bleibt aber
+    gespeichert. Über dem Zimmer steht auf dem Brett der Spielername
+    („IM RAUM · Matin“), solange die Person drin ist.
+  - Der Zug geht sofort an die nächste Person weiter. Die anderen spielen
+    normal weiter. Kommt man selbst wieder an die Reihe, warten alle, bis man
+    den Raum verlassen hat. Das prüft der Server, nicht nur die Oberfläche.
+  - Alle, die dasselbe Zimmer betreten, sind in derselben Instanz und sehen
+    sich gegenseitig live laufen. Wer in einem anderen Zimmer ist, hat seine
+    eigene Instanz.
+  - Mit E (oder dem Knopf) durchsucht man Möbel. Zu Beginn jedes Spiels lost
+    der Server aus, in welchem Möbel pro Zimmer etwas versteckt ist. Pro
+    Raumbesuch darf man zwei Möbel durchsuchen.
+  - Verlassen kann man den Raum über die Tür (E) oder den Knopf
+    „Raum verlassen“, auch wenn man gerade nicht am Zug ist.
+
+
+2. ABLAUF ZWISCHEN BROWSER UND SERVER
+-------------------------------------
+
+  Browser (React)                         Server (Node)
+  ---------------                         -------------
+  Knopf „Raum untersuchen“
+    -> POST /api/rooms/CODE/action  ----> act(): type "enterRoom"
+       { type: "enterRoom" }               - prüft: eigener Zug, Figur in einem Zimmer
+                                           - inside[spielerId] = zimmerId
+                                           - searchesLeft[spielerId] = 2
+                                           - Zug geht an die nächste Person
+                                           - speichert in data/rooms.json
+  App bekommt neuen Spielstand  <-------- view(): Spielstand OHNE Geheimnisse
+  -> state.inside enthält mich
+  -> RoomInstance öffnet sich
+
+  Im Raum, ca. 6–7 Mal pro Sekunde:
+    -> POST /api/rooms/CODE/presence ---> updatePresence(): eigene Position merken
+       { x, y, face, moving }              (nur im Arbeitsspeicher, NICHT in rooms.json)
+  <- { others: [...] }  <---------------- Positionen der anderen im selben Zimmer
+
+  E an einem Möbel:
+    -> POST .../action                ---> act(): type "search"
+       { type: "search", spot: "herd" }    - prüft: im Raum, gültiges Möbel,
+                                             nicht doppelt, noch Versuche übrig
+                                           - Ergebnis nur für diese Person speichern
+  <- Spielstand mit state.searches  <---- nur die EIGENEN Funde
+
+  Knopf „Raum verlassen“:
+    -> POST .../action { type: "leaveRoom" } -> inside und searchesLeft löschen
+
+Wichtig: Der normale Spielstand wird weiter wie bisher alle 1,2 Sekunden
+abgefragt (Polling in App.jsx). Für das Laufen im Raum wäre das zu langsam,
+deshalb gibt es den eigenen, schnelleren /presence-Abgleich.
+
+
+3. DATEIEN IM ÜBERBLICK
+-----------------------
+
+NEU:
+  server/presence.js        Live-Positionen in den Räumen (Server)
+  shared/roomSpots.js       Liste der Verstecke + Regeln (Server und Browser)
+  src/rooms/RoomInstance.jsx   Die Vollbild-Raumansicht (React-Komponente)
+  src/rooms/RoomInstance.css   Aussehen der Raumansicht (alle Klassen beginnen mit .ri-)
+  src/rooms/roomData.js     Einrichtung der neun Räume (Möbel, Teppiche, Licht …)
+  src/rooms/roomPhysics.js  Kollision und „was ist in Reichweite?“
+  src/rooms/roomRenderer.js Zeichnet Raum und Figuren auf ein <canvas>
+  src/rooms/roomSync.js     Schickt/empfängt Positionen, glättet die Bewegung
+  src/rooms/roomPresence.js Hilfsfunktionen: wer ist in welchem Raum?
+  src/rooms/roomTags3D.js   Namensschilder über den Zimmern im 3D-Brett
+  src/rooms/RoomTagsSvg.jsx Dieselben Schilder für das 2D-Ersatzbrett
+  server/*.test.js          Tests (rooms, presence, search, roomMaps, roomLayout, roomSync)
+
+GEÄNDERT (jeweils nur wenige Zeilen eingefügt):
+  server/game.js            Aktionen enterRoom, leaveRoom, search; Verstecke; Geheimhaltung
+  server/index.js           Neue Route /presence mit eigenem Anfragelimit
+  src/App.jsx               Knopf „Raum untersuchen“, RoomInstance einbinden, Regeltext
+  src/ThreeBoard.jsx        Figuren im Raum ausblenden, Namensschilder anzeigen
+  src/FlatBoard.jsx         Dasselbe für das 2D-Ersatzbrett
+  scripts/sync-hosting.mjs  Neue Dateien werden mit in die Online-Fassung kopiert
+  README.md                 Kurzbeschreibung
+
+Es wurde KEINE neue Bibliothek installiert. Alles läuft mit dem, was im
+Projekt schon da war (React, Node, Canvas im Browser, fetch).
+
+
+4. SERVER IM DETAIL
+-------------------
+
+4.1 server/game.js – Spielregeln
+
+  Neue Felder im Spielstand (nur während status === 'playing'):
+
+    inside        { spielerId: zimmerId }   Wer ist gerade in welcher Raum-Instanz?
+    hidden        { zimmerId: { moebelId: fund } }   GEHEIM: wo etwas versteckt ist
+    searched      { spielerId: [ { room, spot, found, round } ] }   Funde pro Person
+    searchesLeft  { spielerId: zahl }       Verbleibende Versuche im aktuellen Besuch
+
+  normalize() übernimmt diese Felder beim Laden, damit sie nicht verloren gehen.
+  insideOf() wirft ungültige Einträge raus (z. B. ein Spieler, den es nicht mehr gibt).
+
+  Neue Aktionen in act():
+
+    enterRoom   Nur im eigenen Zug, nicht mitten in der Bewegung, und nur, wenn
+                die Figur in einem Zimmer steht. Setzt inside und 2 Versuche
+                und gibt den Zug an die nächste Person weiter.
+
+    leaveRoom   Geht immer, auch wenn man nicht am Zug ist. Löscht inside und
+                die restlichen Versuche. Die Brettposition (positions) wurde nie
+                verändert, deshalb steht die Figur danach wieder im Zimmer.
+
+    search      Geht immer, solange man im Raum ist. Prüft: gültiges Möbel für
+                dieses Zimmer, nicht schon durchsucht, noch Versuche übrig.
+                Speichert das Ergebnis nur bei dieser Person. Ins Spielgeschehen
+                (log) kommt nur „X durchsucht etwas im Raum: Küche“, nicht welches
+                Möbel und nicht das Ergebnis.
+
+  Zugsperre: Alle Zug-Aktionen (würfeln, ziehen, Geheimgang, Zug beenden) prüfen
+  jetzt zusätzlich „if (r.inside[p.id]) fail('Verlasse zuerst den Raum …')“.
+  So müssen alle warten, bis die Person den Raum verlassen hat.
+
+  hideClues() verteilt die Verstecke zufällig (mit randomInt, das es in der
+  Datei schon gab). Wird beim Spielstart aufgerufen. Für Spiele, die vor dem
+  Versteck-System gestartet wurden, wird es beim ersten Durchsuchen nachgeholt.
+
+  GEHEIMHALTUNG in view(): view() ist die Funktion, die den Spielstand für eine
+  bestimmte Person zusammenstellt. Sie entfernt hidden, searched und
+  searchesLeft und gibt stattdessen nur searches (eigene Funde) und
+  searchesLeft (eigene Zahl) zurück. Niemand kann also über die Antwort des
+  Servers herausfinden, wo etwas liegt oder was andere gefunden haben.
+
+4.2 server/presence.js – Live-Positionen
+
+  Positionen ändern sich mehrmals pro Sekunde. Würde man sie wie den normalen
+  Spielstand speichern, würde rooms.json ständig neu geschrieben und die
+  Spielstand-Version hochgezählt. Deshalb liegen sie nur im Arbeitsspeicher:
+
+    store: Map< raumcode, Map< spielerId, { place, x, y, face, moving, at } > >
+
+  updatePresence() prüft den Zugang, speichert die eigene Position (auf den
+  Raum begrenzt: x 0–15, y 0–10) und gibt alle anderen zurück, die laut
+  Spielstand im selben Zimmer sind. Wer das Zimmer verlassen hat oder sich
+  6 Sekunden nicht gemeldet hat (z. B. Tab geschlossen), wird entfernt.
+
+  presenceLimiter(): eigenes Anfragelimit (900 pro Minute und Zugang). Das
+  normale Limit (180 pro Minute und IP-Adresse) wäre sonst durch das Laufen
+  schnell aufgebraucht, besonders wenn mehrere Tabs am selben Rechner laufen.
+
+  Folge: Nach einem Serverneustart starten alle im Raum wieder an der Tür.
+
+4.3 server/index.js
+
+  Nur drei Ergänzungen: Import von presence.js, die Route
+  POST /api/rooms/CODE/presence (ohne persist()) und die Ausnahme vom
+  normalen Anfragelimit für diese Route.
+
+4.4 shared/roomSpots.js
+
+  SPOTS              Welche Möbel es pro Zimmer gibt (feste IDs wie 'herd', 'tresor').
+  CLUES_PER_ROOM     Wie viele davon pro Zimmer etwas enthalten (zurzeit 1).
+  SEARCHES_PER_VISIT Wie viele man pro Besuch durchsuchen darf (zurzeit 2).
+
+  Die Datei liegt in shared/, weil Server und Browser beide dieselben IDs
+  kennen müssen.
+
+
+5. BROWSER IM DETAIL
+--------------------
+
+5.1 src/rooms/RoomInstance.jsx – die Raumansicht
+
+  RoomInstance bekommt den Spielstand aus App.jsx. Ist die eigene Person laut
+  state.inside in keinem Raum, zeigt sie nichts (return null). Sonst zeigt sie
+  RoomScene für dieses Zimmer.
+
+  Props (von App.jsx übergeben):
+    state          der Spielstand
+    session        { code, token } für den Live-Abgleich
+    busy, error, connection   damit Fehlermeldungen auch im Vollbild sichtbar sind
+    onLeave()      ruft action('leaveRoom') auf
+    onSearch(id)   ruft action('search', { spot: id }) auf
+    onInteract()   optional, Hook für später (wird nach jedem Ergebnis aufgerufen)
+
+  In RoomScene laufen vier Dinge:
+    - Spiel-Schleife (requestAnimationFrame, ca. 60 Mal pro Sekunde):
+      Tasten lesen, Position mit Kollision bewegen, nächstes Möbel suchen,
+      andere Figuren glätten, alles zeichnen.
+    - Tastatur: WASD/Pfeile setzen „gedrückt“-Merker, E löst Durchsuchen aus.
+    - Live-Abgleich: startRoomSync() aus roomSync.js.
+    - Durchsuchen: schickt die Aktion an den Server, zeigt „Du durchsuchst …“
+      und wartet, bis das Ergebnis im Spielstand (state.searches) auftaucht.
+
+  Die eigene Position wird NICHT im React-State gehalten, sondern in einem
+  useRef. Sonst würde React 60 Mal pro Sekunde neu rendern.
+
+5.2 src/rooms/roomData.js – Einrichtung der Räume
+
+  Jeder Raum ist 15 × 10 Kacheln groß (1 Kachel ≈ 1 Meter).
+  x läuft nach rechts, y nach vorne zum Betrachter, h ist die Höhe.
+  Die Rückwand mit der Tür liegt bei y = 0.
+
+  Ein Möbel ist eine Zeile wie:
+
+    o('stove', 3.0, 0, 1.4, 1, 0.95, { spot: 'herd', label: 'Herd', text: '…' })
+       Art     x    y  Breite Tiefe Höhe  weitere Angaben
+
+  Die Kollision kommt automatisch aus x, y, Breite und Tiefe.
+  spot   = Versteck-ID (muss in shared/roomSpots.js stehen, ein Test prüft das)
+  label  = Name im Knopf („Herd durchsuchen“)
+  text   = Stimmungstext. Er darf keine falsche Spur legen, denn ob etwas
+           gefunden wird, entscheidet der Server.
+
+  Pro Raum gibt es außerdem: Bodenart (style, floor), Wand (wall), Fenster
+  (windows), Wandschmuck (decor: Bilder, Leuchten, Banner …), Teppiche (rugs)
+  und Lichtquellen (lights).
+
+5.3 src/rooms/roomPhysics.js – Kollision
+
+  blocked(def, x, y)    Ist dieser Punkt frei? (Raumrand und alle Möbel)
+  step(def, pos, dx, dy) Bewegt getrennt nach x und y. Dadurch gleitet man an
+                         Möbeln entlang, statt hängen zu bleiben, wenn man schräg
+                         dagegen läuft.
+  nearest(def, pos)     Nächstes Möbel oder die Tür in Reichweite (0,85 Kacheln).
+
+5.4 src/rooms/roomRenderer.js – wie „2,5D“ entsteht
+
+  Es ist kein echtes 3D, sondern eine Schrägansicht auf einem normalen Canvas:
+
+    Bildschirm-x = Rand + x · 48
+    Bildschirm-y = Wandhöhe + y · 48 · 0,7  −  z · 48
+
+  48 Pixel ist eine Kachel. Der Boden wird mit 0,7 gestaucht, dadurch sieht man
+  ihn schräg von vorne. Die Höhe z zieht nach oben. Jedes Möbel wird als
+  Quader mit sichtbarer Oberseite (hell) und Vorderseite (dunkler) gezeichnet
+  (Funktion box), darauf kommen Details (Herdplatten, Bücher, Kissen …).
+
+  Tiefensortierung: Möbel und Figuren werden nach ihrer vorderen Kante (y)
+  sortiert und von hinten nach vorne gezeichnet. Dadurch steht eine Figur, die
+  hinter einem Tisch läuft, auch hinter dem Tisch.
+
+  Reihenfolge in drawRoom(): Wand → Boden → Teppiche → Fenster/Wandschmuck →
+  Tür → Möbel und Figuren (sortiert) → Licht und Schatten → Markierungen
+  (Haken/Ausrufezeichen für durchsuchte Möbel) → Hervorhebung → Namensschilder.
+
+  Für jede Möbelart gibt es eine Zeichenfunktion in KINDS (z. B. KINDS.stove).
+  Eine unbekannte Art wird als einfacher Quader gezeichnet (FALLBACK).
+
+  Figuren (drawPerson): Vorder-, Rück- und Seitenansicht. Für „nach links“
+  wird die Seitenansicht gespiegelt. Beine und Arme sind Rechtecke, die sich
+  um Hüfte bzw. Schulter drehen (Funktion limb).
+
+5.5 src/rooms/roomSync.js – Live-Abgleich im Browser
+
+  startRoomSync() schickt die eigene Position an /presence. Solange sich
+  jemand bewegt oder andere im Raum sind, alle 150 ms, sonst alle 600 ms.
+  Bei Fehlern wird nach 1,2 Sekunden einfach neu versucht.
+
+  createRemoteFigures() glättet die Positionen der anderen: Zwischen zwei
+  Antworten des Servers gleitet die Figur weich zum neuen Punkt, statt zu
+  springen. Bei einem sehr großen Sprung (Aussetzer) wird direkt übernommen,
+  damit niemand durch Möbel „gleitet“.
+
+5.6 Spielbrett: roomPresence.js, roomTags3D.js, RoomTagsSvg.jsx
+
+  roomPresence.js liest aus dem Spielstand, wer in welchem Raum ist.
+  roomTags3D.js erzeugt im 3D-Brett für jedes Zimmer ein Namensschild
+  (THREE.Sprite), das nur sichtbar ist, wenn jemand drin ist.
+  RoomTagsSvg.jsx macht dasselbe im 2D-Ersatzbrett (wenn WebGL fehlt).
+  In ThreeBoard.jsx und FlatBoard.jsx werden Figuren von Personen im Raum
+  ausgeblendet.
+
+
+6. SO BAUT MAN WEITER
+---------------------
+
+Ein Möbel hinzufügen:
+  In src/rooms/roomData.js im passenden Raum eine Zeile in objects einfügen.
+  Für eine neue Möbelart in roomRenderer.js eine Funktion in KINDS ergänzen.
+
+Ein neues Versteck:
+  Dem Möbel ein Feld spot: 'meine-id' geben UND 'meine-id' in
+  shared/roomSpots.js beim selben Zimmer eintragen.
+
+Die Karten anbinden (später):
+  Ein Fund ist zurzeit nur { kind: 'hinweis' }. In server/game.js die Funktion
+  hideClues() so ändern, dass dort z. B. { kind: 'karte', card: 'seil' } steht.
+  Server und Browser reichen das Objekt unverändert durch. In
+  RoomInstance.jsx (Funktion resultOf) den Text für den Fund anpassen.
+
+Regeln ändern:
+  Anzahl Verstecke und Versuche in shared/roomSpots.js
+  (CLUES_PER_ROOM, SEARCHES_PER_VISIT).
+
+
+7. TESTS
+--------
+
+  npm test   führt alle Tests aus (server/*.test.js).
+
+  rooms.test.js       Betreten/Verlassen, Zugsperre, Warten auf die Person im Raum
+  presence.test.js    gemeinsame Instanz, getrennte Zimmer, Aufräumen, Limit
+  search.test.js      Verstecke zufällig, geheim, Grenzen pro Besuch
+  roomMaps.test.js    jedes Möbel erreichbar, Kollision, IDs passen zu roomSpots.js
+  roomLayout.test.js  nichts verdeckt Fenster/Bilder, kein Teppich auf Teppich
+  roomSync.test.js    Glättung und Abgleichsschleife im Browser-Code
+
+  Wer Möbel verschiebt und dabei etwas zustellt, merkt es an roomMaps.test.js.
+
+
+8. GRENZEN UND HINWEISE
+-----------------------
+
+  - Figuren können im Raum durcheinander hindurchlaufen.
+  - Nach einem Serverneustart starten alle im Raum wieder an der Tür
+    (Positionen sind nur im Arbeitsspeicher). Der übrige Spielstand bleibt.
+  - Online-Fassung (Ordner ravenswood-online): sync-hosting.mjs kopiert die
+    neuen Dateien mit, aber der Server dort hat eine eigene index.js. Dort muss
+    die /presence-Route noch eingetragen werden. Bis dahin funktionieren die
+    Räume online, man sieht die anderen nur nicht laufen.

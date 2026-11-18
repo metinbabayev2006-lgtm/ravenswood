@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, createR
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeRoom, join, act, view } from './game.js'
+import { createPresence, updatePresence, presenceLimiter } from './presence.js'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const data = resolve(process.env.DATA_DIR || resolve(root, 'data'))
@@ -13,7 +14,7 @@ const rooms = new Map(existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) 
 const persist = () => { writeFileSync(file + '.tmp', JSON.stringify([...rooms])); renameSync(file + '.tmp', file) }
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const code = () => Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join('')
-const limits = new Map()
+const limits = new Map(), presence = createPresence(), presenceAllowed = presenceLimiter()
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Referrer-Policy', 'same-origin')
@@ -29,7 +30,8 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST') {
         if (!req.headers['content-type']?.startsWith('application/json')) return send(415, { error: 'JSON erforderlich.' })
         const key = req.socket.remoteAddress, now = Date.now(), limit = limits.get(key)
-        if (!limit || now > limit.until) limits.set(key, { count: 1, until: now + 60000 })
+        if (url.pathname.endsWith('/presence')) { if (!presenceAllowed(req.headers.authorization || key)) return send(429, { error: 'Zu viele Anfragen. Bitte kurz warten.' }) }
+        else if (!limit || now > limit.until) limits.set(key, { count: 1, until: now + 60000 })
         else if (++limit.count > 180) return send(429, { error: 'Zu viele Anfragen. Bitte kurz warten.' })
         // A finite per-address window also bounds the in-memory limiter.
         for (const [ip, window] of limits) if (window.until < now) limits.delete(ip)
@@ -47,7 +49,7 @@ const server = http.createServer(async (req, res) => {
         rooms.set(id, room); persist()
         return send(201, { token: player.token, code: id, state: view(room, player.token) })
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|action))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|action|presence))?$/)
       if (!match || !rooms.has(match[1])) return send(404, { error: 'Raum nicht gefunden. Prüfe den Raumcode.' })
       const room = rooms.get(match[1]), operation = match[2]
       if (req.method === 'POST' && operation === 'join') {
@@ -62,6 +64,8 @@ const server = http.createServer(async (req, res) => {
         act(draft, token, input); rooms.set(draft.code, draft); persist()
         return send(200, view(draft, token))
       }
+      // Live-Positionen in der Raum-Instanz: nur im Arbeitsspeicher, kein persist(), keine neue Spielstand-Version.
+      if (req.method === 'POST' && operation === 'presence') return send(200, updatePresence(presence, room, token, input))
       if (req.method === 'GET' && !operation) return send(200, view(room, token))
       return send(404, { error: 'Endpunkt nicht gefunden.' })
     } catch (error) {

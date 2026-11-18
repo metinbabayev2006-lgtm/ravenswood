@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { playStep } from './sound.js'
 import { PEOPLE, ROOMS, STARTS, roomAt, corridor, distance, corridorPath } from '../shared/game.js'
+import { createRoomTags } from './rooms/roomTags3D.js'
+import { insideCharacters } from './rooms/roomPresence.js'
 
 const point = pos => { const r=typeof pos==='string'&&ROOMS.find(r=>r.id===pos); return r?[r.x+2.5-9.5,r.y+2.5-9.5]:[pos[0]-9,pos[1]-9] }
 function walkPath(from,to,index) {
@@ -71,7 +73,7 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
       const player=latest.current.state?.players.find(p=>p.character===c.id),sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:label(player?.name||c.name),depthTest:false}));sprite.scale.set(1.45,.27,1);sprite.position.y=1.98;figure.add(sprite)
       const initial=latest.current.state?.positions?.[c.id]||STARTS[index],p=point(initial);if(typeof initial==='string'){p[0]+=(index%3-1)*.8;p[1]+=(Math.floor(index/3)-.5)*.8}figure.position.set(p[0],.18,p[1]);figures.set(c.id,{figure,limbs,ring,sprite,aura,arrow,position:initial,route:[],index})
     })
-    const markers=new THREE.Group();scene.add(markers)
+    const markers=new THREE.Group();scene.add(markers);const roomTags=createRoomTags(scene)
     const dotGeo=new THREE.CircleGeometry(.14,16),dotMat=new THREE.MeshBasicMaterial({color:0xedc472,side:THREE.DoubleSide,transparent:true,opacity:.85});geos.set('dot',dotGeo);mats.set('dot',dotMat)
     const ray=new THREE.Raycaster(),mouse=new THREE.Vector2(),ground=new THREE.Plane(new THREE.Vector3(0,1,0),-.22),hit=new THREE.Vector3()
     const previewLayer=new THREE.Group();scene.add(previewLayer)
@@ -104,9 +106,10 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
       const s=latest.current.state,me=s?.players.find(p=>p.id===s.me),canMove=s?.status==='playing'&&s.players[s.turn]?.id===s.me&&s.phase==='move'&&!latest.current.busy
       if(!canMove)clearPreview()
       let movingFocus=null
+      const away=insideCharacters(s);roomTags.update(s)
       const key=canMove?JSON.stringify([s.version,me.character]):'none'
       if(key!==e.markerKey){e.markerKey=key;markers.clear();if(canMove){for(let x=0;x<19;x++)for(let y=0;y<19;y++)if(corridor(x,y)&&distance(s.positions[me.character],[x,y])<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(dotGeo,dotMat);m.rotation.x=-Math.PI/2;m.position.set(x-9,.25,y-9);markers.add(m)}for(const r of ROOMS)if(r.id!==s.positions[me.character]&&distance(s.positions[me.character],r.id)<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(ringGeo,dotMat);m.rotation.x=-Math.PI/2;m.scale.set(4,4,4);m.position.set(r.x-7,.26,r.y-7);markers.add(m)}}}
-      for(const [id,f] of figures){const target=s?.positions?.[id]||STARTS[f.index];if(JSON.stringify(target)!==JSON.stringify(f.position)){const old=f.position;f.route=walkPath(old,target,f.index);f.position=target}
+      for(const [id,f] of figures){f.figure.visible=!away.has(id);const target=s?.positions?.[id]||STARTS[f.index];if(JSON.stringify(target)!==JSON.stringify(f.position)){const old=f.position;f.route=walkPath(old,target,f.index);f.position=target}
         if(reducedMotion&&f.route.length){const end=f.route.at(-1);f.figure.position.x=end[0];f.figure.position.z=end[1];f.route=[]}
         const next=f.route[0];if(next){movingFocus=f.figure.position;playStep();const dx=next[0]-f.figure.position.x,dz=next[1]-f.figure.position.z,len=Math.hypot(dx,dz),step=dt*5;if(len<=step){f.figure.position.x=next[0];f.figure.position.z=next[1];f.route.shift()}else{f.figure.position.x+=dx/len*step;f.figure.position.z+=dz/len*step;f.figure.rotation.y=Math.atan2(dx,dz)}f.limbs.forEach((limb,i)=>limb.rotation.x=Math.sin(t*13+(i<2?0:Math.PI))*.45)}else f.limbs.forEach(l=>l.rotation.x*=.7)
         const player=s?.players.find(p=>p.character===id),active=!decorative&&!!player&&s.players[s.turn]?.character===id;f.aura.visible=active;f.arrow.visible=active;f.aura.scale.setScalar(reducedMotion?1:1+Math.sin(t*2.5)*.1);f.arrow.position.y=2.35+(reducedMotion?0:Math.sin(t*2.5)*.09);f.ring.visible=!!player&&player.id===s.me;f.sprite.visible=!decorative&&!!player;f.sprite.position.y=1.98+(s?.players[s.turn]?.character===id?Math.sin(t*2)*.04:0)
@@ -116,7 +119,7 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
     }
     frame=requestAnimationFrame(animate)
     const lost=event=>{event.preventDefault();setFailed(true)};renderer.domElement.addEventListener('webglcontextlost',lost)
-    return()=>{cancelAnimationFrame(frame);e.previewGeometry?.dispose();controls.dispose();renderer.domElement.removeEventListener('wheel',pauseTracking);renderer.domElement.removeEventListener('pointerup',pointerUp,true);renderer.domElement.removeEventListener('pointerleave',pointerLeave);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',down,true);renderer.domElement.removeEventListener('pointermove',pointerMove,true);renderer.domElement.removeEventListener('click',click);renderer.domElement.removeEventListener('webglcontextlost',lost);scene.traverse(o=>{if(o.geometry&&!Array.from(geos.values()).includes(o.geometry))o.geometry.dispose();if(o.material&&!Array.from(mats.values()).includes(o.material))o.material.dispose()});geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());renderer.dispose();renderer.domElement.remove();engine.current=null}
+    return()=>{cancelAnimationFrame(frame);roomTags.dispose();e.previewGeometry?.dispose();controls.dispose();renderer.domElement.removeEventListener('wheel',pauseTracking);renderer.domElement.removeEventListener('pointerup',pointerUp,true);renderer.domElement.removeEventListener('pointerleave',pointerLeave);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',down,true);renderer.domElement.removeEventListener('pointermove',pointerMove,true);renderer.domElement.removeEventListener('click',click);renderer.domElement.removeEventListener('webglcontextlost',lost);scene.traverse(o=>{if(o.geometry&&!Array.from(geos.values()).includes(o.geometry))o.geometry.dispose();if(o.material&&!Array.from(mats.values()).includes(o.material))o.material.dispose()});geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());renderer.dispose();renderer.domElement.remove();engine.current=null}
   },[])
   useEffect(()=>{if(engine.current){engine.current.mode=cameraMode;engine.current.setMode(cameraMode)}},[cameraMode])
   useEffect(()=>{if(plannedTarget)engine.current?.preview(plannedTarget.target)},[plannedTarget,state?.version])
