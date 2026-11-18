@@ -514,3 +514,26 @@ export function drawRoom(ctx, def, e) {
   for (const p of [...people].sort((a, b) => a.y - b.y)) drawTag(ctx, p, e)
 }
 export const footprint = PLAYER
+
+
+// Static surfaces for the 3D miniature. Reuse the actual room drawing routines,
+// so floor patterns, rugs, wallpaper, windows and pictures cannot drift apart.
+export function roomSurfaceCanvases(def) {
+  const source = document.createElement('canvas')
+  source.width = WIDTH; source.height = HEIGHT
+  const ctx = source.getContext('2d')
+  drawWall(ctx, def, 0)
+  for (const win of def.windows) WINDOW(ctx, def, win, 0)
+  for (const decor of def.decor) DECOR[decor.kind]?.(ctx, decor, 0)
+  drawDoor(ctx, def, 0)
+  const crop = (x, y, w, h) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(w); canvas.height = Math.ceil(h)
+    canvas.getContext('2d').drawImage(source, x, y, w, h, 0, 0, canvas.width, canvas.height)
+    return canvas
+  }
+  const wall = crop(OX, PADT, COLS * TS, WALL_H * TS)
+  ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  drawFloor(ctx, def); drawRugs(ctx, def)
+  return { wall, floor: crop(OX, OY, COLS * TS, ROWS * TS * K) }
+}

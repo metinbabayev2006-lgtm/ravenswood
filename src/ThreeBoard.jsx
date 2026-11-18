@@ -3,8 +3,9 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { playStep } from './sound.js'
 import { PEOPLE, ROOMS, STARTS, roomAt, corridor, distance, corridorPath } from '../shared/game.js'
-import { createRoomTags } from './rooms/roomTags3D.js'
-import { insideCharacters } from './rooms/roomPresence.js'
+import { boardCharacters, roomInteriorsVisible } from './rooms/boardVisibility.js'
+import { buildMysteryRoof } from './rooms/mysteryRoofs3D.js'
+import { buildRoomOverview } from './rooms/roomOverview3D.js'
 
 const point = pos => { const r=typeof pos==='string'&&ROOMS.find(r=>r.id===pos); return r?[r.x+2.5-9.5,r.y+2.5-9.5]:[pos[0]-9,pos[1]-9] }
 function walkPath(from,to,index) {
@@ -19,7 +20,9 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
   const [preview,setPreview]=useState(null)
   const [follow,setFollow]=useState(()=>{try{return localStorage.getItem('ravenswood-follow')==='true'}catch{return false}})
   const [view,setView]=useState(()=>{try{return localStorage.getItem('ravenswood-camera')==='top'?'top':'3d'}catch{return '3d'}})
-  latest.current={state,onMove,busy,follow}
+  const [inspect, setInspect] = useState(false)
+  const interiors = roomInteriorsVisible(state, inspect)
+  latest.current={state,onMove,busy,follow,interiors}
   const cameraMode=decorative?'3d':view
   useEffect(()=>{
     if(!host.current)return
@@ -38,30 +41,21 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
     const label=(text,color='#e5d6b1',bg='#281b24')=>{const c=document.createElement('canvas');c.width=512;c.height=96;const ctx=c.getContext('2d');ctx.fillStyle=bg;ctx.fillRect(0,0,512,96);ctx.strokeStyle='#a17b4a';ctx.lineWidth=4;ctx.strokeRect(2,2,508,92);ctx.fillStyle=color;ctx.font='bold 40px Georgia';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,49,490);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;textures.push(t);return t}
     const base=box(scene,0,-.38,0,20.7,.65,20.7,'#28151b');box(scene,0,-.03,0,20,.08,20,'#8e7951')
     for(let x=0;x<19;x++)for(let z=0;z<19;z++)box(scene,x-9,.025,z-9,.98,.08,.98,(x+z)%2?'#3d3035':'#8b7a71')
-    const chair=(g,x,z,rotation=0)=>{const c=new THREE.Group();c.position.set(x,0,z);c.rotation.y=rotation;g.add(c);box(c,0,.32,0,.46,.12,.48,'#9e6b54');box(c,0,.65,-.22,.46,.65,.1,'#8b6255');for(const a of [-.16,.16])for(const b of [-.16,.16])box(c,a,.16,b,.06,.32,.06,'#473e37')}
-    const table=(g,x,z,w=2.3,d=1.3)=>{box(g,x,.73,z,w,.14,d,'#966d48');for(const a of [-w/2+.15,w/2-.15])for(const b of [-d/2+.15,d/2-.15])box(g,x+a,.36,z+b,.12,.72,.12,'#4e3c30')}
-    const plant=(g,x,z)=>{box(g,x,.22,z,.36,.44,.36,'#675043');sphere(g,x,.63,z,.35,'#3d735f');sphere(g,x-.15,.92,z,.24,'#51836a')}
-    for(const r of ROOMS){const g=new THREE.Group();g.position.set(r.x-9.5,0,r.y-9.5);scene.add(g);box(g,2.5,.1,2.5,5,.14,5,r.tone)
-      for(let i=0;i<5;i++)box(g,i+.5,.185,2.5,.97,.04,4.85,i%2?'#5b352f':'#654038')
-      const backDoor=r.door[1]===r.y-1,leftDoor=r.door[0]===r.x-1
-      if(backDoor){box(g,.9,.8,0,1.8,1.5,.16,'#632d36');box(g,4.1,.8,0,1.8,1.5,.16,'#632d36')}else box(g,2.5,.8,0,5,1.5,.16,'#632d36')
-      if(leftDoor){box(g,0,.8,.9,.16,1.5,1.8,'#3e202c');box(g,0,.8,4.1,.16,1.5,1.8,'#3e202c')}else box(g,0,.8,2.5,.16,1.5,5,'#3e202c')
-      box(g,2.5,1.58,0,5,.09,.2,'#ba9263');box(g,0,1.58,2.5,.2,.09,5,'#967851')
-      for(const x of [1.2,3.7]){box(g,x,.95,.1,.7,.85,.06,'#497a9c');box(g,x,1.36,.14,.8,.06,.08,'#a1b8c9');box(g,x,.96,.15,.04,.8,.08,'#a1b8c9')}
-      const floorLabel=new THREE.Mesh(new THREE.PlaneGeometry(3.9,.65),new THREE.MeshBasicMaterial({map:label(r.name),side:THREE.DoubleSide}));floorLabel.rotation.x=-Math.PI/2;floorLabel.position.set(2.5,.24,4.52);g.add(floorLabel)
-      if(['library','study'].includes(r.id)){for(const x of [.7,2.2,3.7]){box(g,x,.95,.35,1.35,1.65,.5,'#3a302e');for(let y=.4;y<1.8;y+=.45){box(g,x,y,.64,1.3,.05,.3,'#a48c66');for(let i=0;i<6;i++)box(g,x-.49+i*.19,y+.17,.6,.12,.28,.14,['#49766e','#996c5e','#9e8e61','#696d8b'][i%4])}}table(g,2.7,2.6,1.8,1.2);chair(g,2.7,3.6);plant(g,4.5,3.5)}
-      else if(r.id==='billiard'){box(g,2.5,.65,2.3,2.6,.7,1.8,'#4b382e');box(g,2.5,1.04,2.3,2.5,.12,1.7,'#92673f');box(g,2.5,1.12,2.3,2.2,.06,1.4,'#24765d');sphere(g,2.1,1.21,2.2,.08,'#e8e3cd');sphere(g,2.9,1.21,2.4,.08,'#b54749')}
-      else if(r.id==='kitchen'){box(g,2.5,.55,.6,3.9,1,.9,'#798a89');box(g,.6,.55,1.6,.9,1,2,'#798a89');box(g,2.5,1.1,.6,4,.12,1,'#a9b3ae');table(g,2.9,2.8,1.7,1.1);chair(g,2.3,3.7);plant(g,4.2,.6)}
-      else if(r.id==='dining'){box(g,2.5,.23,2.4,3.7,.04,3.1,'#692533');table(g,2.5,2.4,2.5,1.3);for(const x of [1.5,2.5,3.5]){chair(g,x,3.5);chair(g,x,1.2,Math.PI)}sphere(g,2.5,1.02,2.4,.16,'#c3a25e')}
-      else if(r.id==='lounge'){box(g,2.5,.35,2.4,3.7,.2,3,'#6b283a');for(const x of [1.2,3.8]){box(g,x,.55,2.2,.85,.5,2.3,'#9c3549');box(g,x,.9,1.3,.85,.8,.2,'#652538')}table(g,2.5,2.6,.9,1.2);plant(g,4.2,.6)}
-      else if(r.id==='garden'){for(const x of [.8,4.2])for(const z of [.8,2.3,3.5])plant(g,x,z);sphere(g,2.5,.5,2.3,.5,'#708b91');table(g,2.5,2.3,1.3,1.3);chair(g,2.5,3.4)}
-      else if(r.id==='hall'){for(let i=0;i<6;i++)box(g,2.5,.2+i*.12,.5+i*.32,1.6,.2+i*.22,.33,'#818890');plant(g,.8,3.3);plant(g,4.2,3.3)}
-      else{box(g,2.5,.23,2.5,3.5,.07,3.2,'#782a39');plant(g,.7,.7);plant(g,4.3,.7);chair(g,4.1,3.3);table(g,1,1.4,.8,.7)}
-      // Brass candles and warm pools of light against the cool moonlit windows.
-      const candle=box(g,4.2,.45,3.6,.12,.5,.12,'#d7b580');box(g,4.2,.22,3.6,.35,.08,.35,'#aa814c')
-      const flame=sphere(g,4.2,.76,3.6,.065,'#ffe2a2');flame.material=new THREE.MeshStandardMaterial({color:0xffda89,emissive:0xffa84d,emissiveIntensity:3});mats.set('flame'+r.id,flame.material)
-      if(['lounge','dining','ballroom'].includes(r.id)){const light=new THREE.PointLight(0xff964f,5,7,2);light.position.set(2.5,2.8,2.5);g.add(light)}
-      const lamp=sphere(g,2.5,1.4,.22,.1,'#ffe4a8');lamp.material=new THREE.MeshStandardMaterial({color:0xffdf9e,emissive:0xffb95c,emissiveIntensity:2});mats.set('lamp'+r.id,lamp.material)
+    const roomLayers = []
+    for (const r of ROOMS) {
+      const g = new THREE.Group()
+      g.position.set(r.x - 9.5, 0, r.y - 9.5)
+      scene.add(g)
+      const interior = buildRoomOverview(g, r, { box, sphere, textures })
+      const roof = buildMysteryRoof(g, r, { box, label, textures })
+      interior.visible = latest.current.interiors; roof.visible = !latest.current.interiors
+      roomLayers.push({ interior, roof })
+      const plaque = new THREE.Mesh(new THREE.PlaneGeometry(3.8, .4), new THREE.MeshBasicMaterial({ map: label(r.name), side: THREE.DoubleSide }))
+      plaque.rotation.x = -Math.PI / 2
+      plaque.position.set(2.5, .22, 5.12)
+      g.add(plaque)
+      const doorX = r.door[0] - r.x + .5, doorZ = r.door[1] - r.y + .5
+      box(g, Math.max(0, Math.min(5, doorX)), .205, Math.max(0, Math.min(5, doorZ)), doorX < 0 || doorX > 5 ? .16 : .9, .04, doorZ < 0 || doorZ > 5 ? .16 : .9, '#c9a35f')
     }
     const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const figures=new Map(),ringGeo=new THREE.RingGeometry(.36,.46,32);geos.set('ring',ringGeo)
@@ -73,7 +67,7 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
       const player=latest.current.state?.players.find(p=>p.character===c.id),sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:label(player?.name||c.name),depthTest:false}));sprite.scale.set(1.45,.27,1);sprite.position.y=1.98;figure.add(sprite)
       const initial=latest.current.state?.positions?.[c.id]||STARTS[index],p=point(initial);if(typeof initial==='string'){p[0]+=(index%3-1)*.8;p[1]+=(Math.floor(index/3)-.5)*.8}figure.position.set(p[0],.18,p[1]);figures.set(c.id,{figure,limbs,ring,sprite,aura,arrow,position:initial,route:[],index})
     })
-    const markers=new THREE.Group();scene.add(markers);const roomTags=createRoomTags(scene)
+    const markers=new THREE.Group();scene.add(markers)
     const dotGeo=new THREE.CircleGeometry(.14,16),dotMat=new THREE.MeshBasicMaterial({color:0xedc472,side:THREE.DoubleSide,transparent:true,opacity:.85});geos.set('dot',dotGeo);mats.set('dot',dotMat)
     const ray=new THREE.Raycaster(),mouse=new THREE.Vector2(),ground=new THREE.Plane(new THREE.Vector3(0,1,0),-.22),hit=new THREE.Vector3()
     const previewLayer=new THREE.Group();scene.add(previewLayer)
@@ -106,20 +100,23 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
       const s=latest.current.state,me=s?.players.find(p=>p.id===s.me),canMove=s?.status==='playing'&&s.players[s.turn]?.id===s.me&&s.phase==='move'&&!latest.current.busy
       if(!canMove)clearPreview()
       let movingFocus=null
-      const away=insideCharacters(s);roomTags.update(s)
+      const visibleFigures = boardCharacters(s)
+      const open = roomInteriorsVisible(s, latest.current.interiors)
+      for (const layer of roomLayers) { layer.interior.visible = open; layer.roof.visible = !open }
       const key=canMove?JSON.stringify([s.version,me.character]):'none'
-      if(key!==e.markerKey){e.markerKey=key;markers.clear();if(canMove){for(let x=0;x<19;x++)for(let y=0;y<19;y++)if(corridor(x,y)&&distance(s.positions[me.character],[x,y])<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(dotGeo,dotMat);m.rotation.x=-Math.PI/2;m.position.set(x-9,.25,y-9);markers.add(m)}for(const r of ROOMS)if(r.id!==s.positions[me.character]&&distance(s.positions[me.character],r.id)<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(ringGeo,dotMat);m.rotation.x=-Math.PI/2;m.scale.set(4,4,4);m.position.set(r.x-7,.26,r.y-7);markers.add(m)}}}
-      for(const [id,f] of figures){f.figure.visible=!away.has(id);const target=s?.positions?.[id]||STARTS[f.index];if(JSON.stringify(target)!==JSON.stringify(f.position)){const old=f.position;f.route=walkPath(old,target,f.index);f.position=target}
+      if(key!==e.markerKey){e.markerKey=key;markers.clear();if(canMove){for(let x=0;x<19;x++)for(let y=0;y<19;y++)if(corridor(x,y)&&distance(s.positions[me.character],[x,y])<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(dotGeo,dotMat);m.rotation.x=-Math.PI/2;m.position.set(x-9,.25,y-9);markers.add(m)}for(const r of ROOMS)if(r.id!==s.positions[me.character]&&distance(s.positions[me.character],r.id)<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(ringGeo,dotMat);m.rotation.x=-Math.PI/2;m.scale.set(4,4,4);m.position.set(r.x-7,2.26,r.y-7);markers.add(m)}}}
+      for(const [id,f] of figures){f.figure.visible=visibleFigures.has(id);const target=s?.positions?.[id]||STARTS[f.index];if(JSON.stringify(target)!==JSON.stringify(f.position)){const old=f.position;f.route=walkPath(old,target,f.index);f.position=target}
+        if(!f.figure.visible){const p=point(target);f.figure.position.x=p[0];f.figure.position.z=p[1];f.route=[]}
         if(reducedMotion&&f.route.length){const end=f.route.at(-1);f.figure.position.x=end[0];f.figure.position.z=end[1];f.route=[]}
-        const next=f.route[0];if(next){movingFocus=f.figure.position;playStep();const dx=next[0]-f.figure.position.x,dz=next[1]-f.figure.position.z,len=Math.hypot(dx,dz),step=dt*5;if(len<=step){f.figure.position.x=next[0];f.figure.position.z=next[1];f.route.shift()}else{f.figure.position.x+=dx/len*step;f.figure.position.z+=dz/len*step;f.figure.rotation.y=Math.atan2(dx,dz)}f.limbs.forEach((limb,i)=>limb.rotation.x=Math.sin(t*13+(i<2?0:Math.PI))*.45)}else f.limbs.forEach(l=>l.rotation.x*=.7)
-        const player=s?.players.find(p=>p.character===id),active=!decorative&&!!player&&s.players[s.turn]?.character===id;f.aura.visible=active;f.arrow.visible=active;f.aura.scale.setScalar(reducedMotion?1:1+Math.sin(t*2.5)*.1);f.arrow.position.y=2.35+(reducedMotion?0:Math.sin(t*2.5)*.09);f.ring.visible=!!player&&player.id===s.me;f.sprite.visible=!decorative&&!!player;f.sprite.position.y=1.98+(s?.players[s.turn]?.character===id?Math.sin(t*2)*.04:0)
+        const next=f.route[0];if(next&&f.figure.visible){movingFocus=f.figure.position;playStep();const dx=next[0]-f.figure.position.x,dz=next[1]-f.figure.position.z,len=Math.hypot(dx,dz),step=dt*5;if(len<=step){f.figure.position.x=next[0];f.figure.position.z=next[1];f.route.shift()}else{f.figure.position.x+=dx/len*step;f.figure.position.z+=dz/len*step;f.figure.rotation.y=Math.atan2(dx,dz)}f.limbs.forEach((limb,i)=>limb.rotation.x=Math.sin(t*13+(i<2?0:Math.PI))*.45)}else f.limbs.forEach(l=>l.rotation.x*=.7)
+        const player=s?.players.find(p=>p.character===id);if(player&&f.sprite.userData.playerName!==player.name){f.sprite.material.map=label(player.name);f.sprite.material.needsUpdate=true;f.sprite.userData.playerName=player.name}const active=!decorative&&!!player&&s.players[s.turn]?.character===id;f.aura.visible=active;f.arrow.visible=active;f.aura.scale.setScalar(reducedMotion?1:1+Math.sin(t*2.5)*.1);f.arrow.position.y=2.35+(reducedMotion?0:Math.sin(t*2.5)*.09);f.ring.visible=!!player&&player.id===s.me;f.sprite.visible=!decorative&&!!player;f.sprite.position.y=1.98+(s?.players[s.turn]?.character===id?Math.sin(t*2)*.04:0)
       }
       if(!decorative&&latest.current.follow&&movingFocus&&!reducedMotion&&now>e.trackingPause){const goal=new THREE.Vector3(movingFocus.x,0,movingFocus.z),delta=goal.sub(controls.target).multiplyScalar(Math.min(1,dt*4));camera.position.add(delta);controls.target.add(delta);controls.update()}
       renderer.render(scene,camera);frame=requestAnimationFrame(animate)
     }
     frame=requestAnimationFrame(animate)
     const lost=event=>{event.preventDefault();setFailed(true)};renderer.domElement.addEventListener('webglcontextlost',lost)
-    return()=>{cancelAnimationFrame(frame);roomTags.dispose();e.previewGeometry?.dispose();controls.dispose();renderer.domElement.removeEventListener('wheel',pauseTracking);renderer.domElement.removeEventListener('pointerup',pointerUp,true);renderer.domElement.removeEventListener('pointerleave',pointerLeave);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',down,true);renderer.domElement.removeEventListener('pointermove',pointerMove,true);renderer.domElement.removeEventListener('click',click);renderer.domElement.removeEventListener('webglcontextlost',lost);scene.traverse(o=>{if(o.geometry&&!Array.from(geos.values()).includes(o.geometry))o.geometry.dispose();if(o.material&&!Array.from(mats.values()).includes(o.material))o.material.dispose()});geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());renderer.dispose();renderer.domElement.remove();engine.current=null}
+    return()=>{cancelAnimationFrame(frame);e.previewGeometry?.dispose();controls.dispose();renderer.domElement.removeEventListener('wheel',pauseTracking);renderer.domElement.removeEventListener('pointerup',pointerUp,true);renderer.domElement.removeEventListener('pointerleave',pointerLeave);observer.disconnect();renderer.domElement.removeEventListener('pointerdown',down,true);renderer.domElement.removeEventListener('pointermove',pointerMove,true);renderer.domElement.removeEventListener('click',click);renderer.domElement.removeEventListener('webglcontextlost',lost);scene.traverse(o=>{if(o.geometry&&!Array.from(geos.values()).includes(o.geometry))o.geometry.dispose();if(o.material&&!Array.from(mats.values()).includes(o.material))o.material.dispose()});geos.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());renderer.dispose();renderer.domElement.remove();engine.current=null}
   },[])
   useEffect(()=>{if(engine.current){engine.current.mode=cameraMode;engine.current.setMode(cameraMode)}},[cameraMode])
   useEffect(()=>{if(plannedTarget)engine.current?.preview(plannedTarget.target)},[plannedTarget,state?.version])
@@ -127,6 +124,7 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
   const change=value=>{setView(value);try{localStorage.setItem('ravenswood-camera',value)}catch{}}
   const me=state?.players.find(p=>p.id===state.me),moving=state?.phase==='move'&&state?.players[state.turn]?.id===state.me
   return <div className={`three-manor ${decorative?'three-decorative':''}`}>
+    {state?.status!=='playing'&&<div className="camera-controls" role="group" aria-label="Villa vor Spielbeginn ansehen"><button type="button" aria-pressed={interiors} onClick={()=>setInspect(v=>!v)}>{interiors?'Dächer schließen':'Villa ansehen'}</button><span>{interiors?'Einrichtung ansehen · vor Spielbeginn':'Zimmer bleiben im Spiel verborgen'}</span></div>}
     {!decorative&&<div className="camera-controls" role="group" aria-label="Brettansicht"><span>KAMERA</span>{[['3d','3D'],['top','Von oben']].map(([id,label])=><button key={id} type="button" aria-pressed={cameraMode===id} onClick={()=>change(id)}>{label}</button>)}<button type="button" aria-label="Karte nach links drehen" onClick={()=>engine.current?.rotate(Math.PI/6)}>↶</button><button type="button" aria-label="Karte nach rechts drehen" onClick={()=>engine.current?.rotate(-Math.PI/6)}>↷</button><button type="button" onClick={()=>engine.current?.setMode(cameraMode)}>Zurücksetzen</button></div>}
     <div className="three-viewport" ref={host} role="img" aria-label="Dreidimensionale Villa mit laufenden Spielfiguren"/>
     {!decorative&&<div className="board-extras"><button type="button" aria-pressed={follow} onClick={()=>{setFollow(!follow);try{localStorage.setItem('ravenswood-follow',String(!follow))}catch{}}}>Kamera folgt: {follow?'An':'Aus'}</button><span>Goldener Ring & Pfeil: aktive Figur</span></div>}
