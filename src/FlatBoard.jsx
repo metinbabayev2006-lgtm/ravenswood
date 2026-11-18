@@ -1,10 +1,13 @@
 import { useId, useState } from 'react'
 import { PEOPLE, ROOMS, STARTS, corridor, distance } from '../shared/game.js'
 import { RoomArt } from './Artwork.jsx'
+import { insideCharacters } from './rooms/roomPresence.js'
+import RoomTagsSvg from './rooms/RoomTagsSvg.jsx'
 
 export default function Board({ state, onMove, busy, decorative = false }) {
   const id = useId().replace(/:/g, ''), me = state?.players.find(p => p.id === state.me)
   const canMove = state?.status === 'playing' && state.players[state.turn]?.id === state.me && state.phase === 'move' && !busy
+  const away = insideCharacters(state)
   const from = me && state.positions?.[me.character]
   const reachable = target => canMove && JSON.stringify(target) !== JSON.stringify(from) && distance(from, target) <= state.dice.reduce((a, b) => a + b, 0)
   const activate = (event, target) => { if (reachable(target) && ['Enter', ' '].includes(event.key)) { event.preventDefault(); onMove(target) } }
@@ -39,7 +42,8 @@ export default function Board({ state, onMove, busy, decorative = false }) {
       <rect x={r.door[0]+.12} y={r.door[1]+.12} width=".76" height=".76" rx=".08" fill="#714f30" stroke="#fae3a6" strokeWidth=".065"/><path d={`M${r.door[0]+.25} ${r.door[1]+.28}h.5m-.5 .2h.5m-.5 .2h.5`} stroke="#b8955c" strokeWidth=".04"/>
       {reachable(r.id) && <rect x={r.x+.08} y={r.y+.08} width="4.84" height="4.84" rx=".06" fill="#f5d17d" fillOpacity=".16" stroke="#ffe5a2" strokeWidth=".16"/>}
     </g>)}
-    {PEOPLE.map((c,i) => { const pos = state?.positions?.[c.id] || STARTS[i], room = typeof pos === 'string' && ROOMS.find(r => r.id === pos), player = state?.players.find(p => p.character === c.id), mine = player && player.id === state?.me; const x = room ? room.x+.8+(i%3)*1.65 : pos[0]+.5, y = room ? room.y+1.25+Math.floor(i/3)*1.55 : pos[1]+.65; return <g key={c.id} className="board-pawn" transform={`translate(${x} ${y})`} pointerEvents="none"><title>{c.name}{player ? ` · ${player.name}` : ' · unbesetzt'}</title>{mine && <ellipse cy=".2" rx=".52" ry=".3" fill="#fff0a0" opacity=".9"/>}<ellipse cy=".15" rx=".34" ry=".2" fill="#24352d"/><path d="M-.3 .12Q-.32-.02-.17-.12L-.1-.48H.1L.17-.12Q.32-.02.3.12Z" fill={c.color} stroke="#283c31" strokeWidth=".035"/><path d="M-.3 .12Q-.32-.02-.17-.12L-.1-.48H.1L.17-.12Q.32-.02.3.12Z" fill={`url(#${id}-${c.id})`}/><circle cy="-.55" r=".2" fill={c.color} stroke="#334334" strokeWidth=".035"/><circle cx="-.065" cy="-.63" r=".07" fill="#fff" opacity=".5"/>{mine && <path d="M-.1-.98H.1L0-.8Z" fill="#fff2ae"/>}</g> })}
+    {PEOPLE.map((c,i) => { if (away.has(c.id)) return null; const pos = state?.positions?.[c.id] || STARTS[i], room = typeof pos === 'string' && ROOMS.find(r => r.id === pos), player = state?.players.find(p => p.character === c.id), mine = player && player.id === state?.me; const x = room ? room.x+.8+(i%3)*1.65 : pos[0]+.5, y = room ? room.y+1.25+Math.floor(i/3)*1.55 : pos[1]+.65; return <g key={c.id} className="board-pawn" transform={`translate(${x} ${y})`} pointerEvents="none"><title>{c.name}{player ? ` · ${player.name}` : ' · unbesetzt'}</title>{mine && <ellipse cy=".2" rx=".52" ry=".3" fill="#fff0a0" opacity=".9"/>}<ellipse cy=".15" rx=".34" ry=".2" fill="#24352d"/><path d="M-.3 .12Q-.32-.02-.17-.12L-.1-.48H.1L.17-.12Q.32-.02.3.12Z" fill={c.color} stroke="#283c31" strokeWidth=".035"/><path d="M-.3 .12Q-.32-.02-.17-.12L-.1-.48H.1L.17-.12Q.32-.02.3.12Z" fill={`url(#${id}-${c.id})`}/><circle cy="-.55" r=".2" fill={c.color} stroke="#334334" strokeWidth=".035"/><circle cx="-.065" cy="-.63" r=".07" fill="#fff" opacity=".5"/>{mine && <path d="M-.1-.98H.1L0-.8Z" fill="#fff2ae"/>}</g> })}
+    <RoomTagsSvg state={state}/>
     <text x="9.5" y="19.53" textAnchor="middle" fontFamily="Georgia, serif" fontSize=".23" letterSpacing=".16" fill="#cdb786">RAVENSWOOD · DER MULTIPLAYER-SPIELTISCH</text>
   </svg>
   <div className="room-volumes" aria-hidden="true">{ROOMS.map(r=><div className="room-volume" key={r.id} style={{left:`${(r.x+1.2)/21.4*100}%`,top:`${(r.y+1.2)/21.4*100}%`,width:`${5/21.4*100}%`,height:`${5/21.4*100}%`}}><div className="wall-back"/><div className="wall-left"/><div className="manor-lamp"/></div>)}</div>
