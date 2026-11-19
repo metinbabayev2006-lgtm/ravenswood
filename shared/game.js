@@ -18,6 +18,10 @@ export const ROOMS = [
   { id: 'library', name: 'Bibliothek', x: 7, y: 7, door: [9, 6], tone: '#6d5a4b', icon: '▤' },
 ]
 export const STARTS = [[6, 0], [12, 0], [18, 6], [18, 12], [12, 18], [6, 18]]
+export const SECURITY_ROOM = 'security'
+export const SECURITY_SPOT = 'buecherwand'
+export const atDoor = position => ROOMS.find(room => Array.isArray(position) && room.door[0] === position[0] && room.door[1] === position[1])
+export const moveTarget = target => typeof target === 'string' ? ROOMS.find(room => room.id === target)?.door : target
 export const roomAt = (x, y) => ROOMS.find(r => x >= r.x && x < r.x + 5 && y >= r.y && y < r.y + 5)
 export const corridor = (x, y) => x >= 0 && x < 19 && y >= 0 && y < 19 && !roomAt(x, y)
 export function distance(from, to) {

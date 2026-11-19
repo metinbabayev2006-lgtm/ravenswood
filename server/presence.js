@@ -12,6 +12,18 @@ const FACES = new Set(['n', 's', 'e', 'w'])
 // store: Map<raumcode, Map<spielerId, { place, x, y, face, moving, at }>>
 export const createPresence = () => new Map()
 
+export function cameraFeed(store, room, place, now = Date.now()) {
+  const positions = store.get(room.code)
+  return Object.entries(room.inside || {}).filter(([, location]) => location === place).map(([id]) => {
+    const position = positions?.get(id)
+    const player = room.players.find(candidate => candidate.id === id)
+    if (!player || player.eliminated) return null
+    const live = position?.place === place && now - position.at <= STALE_MS
+    return { id, character: player.character, name: player.name, x: live ? position.x : 7.5, y: live ? position.y : 1.5,
+      face: live ? position.face : 's', moving: live && position.moving }
+  }).filter(Boolean)
+}
+
 // Liest die eigene Position aus der Anfrage, speichert sie und gibt alle anderen in derselben Instanz zurück.
 // Fehler werden als Error mit deutscher Meldung geworfen (wie in game.js).
 export function updatePresence(store, room, token, input = {}, now = Date.now()) {

@@ -3,8 +3,9 @@ import { randomInt } from 'node:crypto'
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, createReadStream } from 'node:fs'
 import { resolve, extname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { makeRoom, join, act, view } from './game.js'
-import { createPresence, updatePresence, presenceLimiter } from './presence.js'
+import { makeRoom, join, act, view, leaveGame, playBot } from './game.js'
+import { createPresence, updatePresence, presenceLimiter, cameraFeed } from './presence.js'
+import { ROOMS, SECURITY_ROOM } from '../shared/game.js'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const data = resolve(process.env.DATA_DIR || resolve(root, 'data'))
@@ -15,6 +16,19 @@ const persist = () => { writeFileSync(file + '.tmp', JSON.stringify([...rooms]))
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const code = () => Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join('')
 const limits = new Map(), presence = createPresence(), presenceAllowed = presenceLimiter()
+setInterval(() => {
+  let changed = false
+  for (const [code, room] of rooms) {
+    if (room.status !== 'playing' || room.winner || Date.now() - room.updated > 7 * 86400000 || !room.players.some(player => player.bot)) continue
+    try {
+      const draft = structuredClone(room)
+      if (playBot(draft)) { rooms.set(code, draft); changed = true }
+    } catch (error) { console.error('Bot-Zug fehlgeschlagen:', error.message) }
+  }
+  if (changed) {
+    try { persist() } catch (error) { console.error('Bot-Spielstand konnte nicht gespeichert werden:', error.code) }
+  }
+}, 700).unref()
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Referrer-Policy', 'same-origin')
@@ -45,11 +59,11 @@ const server = http.createServer(async (req, res) => {
         for (const [id, r] of rooms) if (Date.now() - r.updated > 7 * 86400000) rooms.delete(id)
         if (rooms.size >= 1000) return send(503, { error: 'Der Server ist ausgelastet.' })
         let id; do { id = code() } while (rooms.has(id))
-        const room = makeRoom(id), player = join(room, input.name)
+        const room = makeRoom(id, input.mode), player = join(room, input.name)
         rooms.set(id, room); persist()
         return send(201, { token: player.token, code: id, state: view(room, player.token) })
       }
-      const match = url.pathname.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|action|presence))?$/)
+      const match = url.pathname.match(/^\/api\/rooms\/([A-Z2-9]{6})(?:\/(join|action|presence|leave|camera))?$/)
       if (!match || !rooms.has(match[1])) return send(404, { error: 'Raum nicht gefunden. Prüfe den Raumcode.' })
       const room = rooms.get(match[1]), operation = match[2]
       if (req.method === 'POST' && operation === 'join') {
@@ -58,6 +72,21 @@ const server = http.createServer(async (req, res) => {
       }
       const token = req.headers.authorization?.replace(/^Bearer /, '')
       if (!token || !room.players.some(p => p.token === token)) return send(401, { error: 'Dein Raumzugang ist ungültig.' })
+      if (req.method === 'POST' && operation === 'leave') {
+        const draft = structuredClone(room)
+        leaveGame(draft, token)
+        if (draft.players.some(player => !player.bot)) rooms.set(draft.code, draft)
+        else { rooms.delete(draft.code); presence.delete(draft.code) }
+        persist()
+        return send(200, { ok: true })
+      }
+      if (req.method === 'GET' && operation === 'camera') {
+        const player = room.players.find(p => p.token === token)
+        const place = url.searchParams.get('room')
+        if (room.mode !== 'imposter' || room.winner || player.eliminated || room.inside?.[player.id] !== SECURITY_ROOM || !room.securityFound?.[player.id]) return send(403, { error: 'Kameras sind nur im Security Room verfügbar.' })
+        if (!ROOMS.some(candidate => candidate.id === place)) return send(404, { error: 'Kamera nicht gefunden.' })
+        return send(200, { people: cameraFeed(presence, room, place) })
+      }
       if (req.method === 'POST' && operation === 'action') {
         // Validate and mutate a copy: rejected actions never partially change a room.
         const draft = structuredClone(room)
@@ -88,4 +117,4 @@ const server = http.createServer(async (req, res) => {
   stream.on('error', () => { if (!res.headersSent) res.writeHead(404); res.end() }); stream.pipe(res)
 })
 const port = Number(process.env.PORT || 3001)
-server.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Ravenswood Multiplayer: http://localhost:${port}`))
+server.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Case Unknown Multiplayer: http://localhost:${server.address().port}`))

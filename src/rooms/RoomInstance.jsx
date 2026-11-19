@@ -17,24 +17,26 @@ const KEYS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', Arrow
 // Props: state (Spielstand), session ({ code, token } für den Live-Abgleich), busy/error/connection (aus App, da die
 // normale Anzeige verdeckt ist), onLeave() (Raum verlassen), onSearch(versteckId) (Möbel durchsuchen, prüft der Server),
 // onInteract(gegenstand, raum, fund) (optional – Hook für spätere Karten, wird nach jedem Ergebnis aufgerufen).
-export default function RoomInstance({ state, session, busy, error, connection, onDismissError, onLeave, onSearch, onInteract }) {
+export default function RoomInstance({ state, session, busy, error, connection, onDismissError, onLeave, onSearch, onInteract, onSecurity, onEliminate }) {
   const me = state?.players?.find(p => p.id === state.me), roomId = me && state.inside?.[me.id], room = ROOMS.find(r => r.id === roomId)
   if (!room || !ROOM_MAPS[room.id]) return null
   const current = state.players[state.turn], figure = PEOPLE.find(c => c.id === me.character)
   const others = (occupantsByRoom(state)[room.id] || []).filter(o => o.id !== me.id)
   return <RoomScene key={room.id} room={room} def={ROOM_MAPS[room.id]} name={me.name} color={figure?.color} myTurn={current?.id === me.id} currentName={current?.name}
     others={others} code={session?.code} token={session?.token} onSearch={onSearch}
+    onSecurity={room.id === 'study' && state.securityUnlocked ? onSecurity : undefined}
+    victims={others.filter(player => state.victims.includes(player.id))} onEliminate={onEliminate}
     searches={(state.searches || []).filter(f => f.room === room.id)} searchesLeft={state.searchesLeft || 0} log={state.log || []} busy={busy} error={error} connection={connection} onDismissError={onDismissError} onLeave={onLeave} onInteract={onInteract}/>
 }
 
-function RoomScene({ room, def, name, color, myTurn, currentName, others, code, token, onSearch, searches, searchesLeft, log, busy, error, connection, onDismissError, onLeave, onInteract }) {
+function RoomScene({ room, def, name, color, myTurn, currentName, others, code, token, onSearch, searches, searchesLeft, log, busy, error, connection, onDismissError, onLeave, onInteract, onSecurity, victims, onEliminate }) {
   const canvasRef = useRef(null), shellRef = useRef(null), nearRef = useRef(null)
   const pad = useRef({ up: false, down: false, left: false, right: false })
   const live = useRef({}); live.current = { myTurn, name, color, onLeave, onInteract, onSearch, others, searches, searchesLeft, marks: new Map(searches.map(f => [f.spot, f.found ? 'hit' : 'miss'])) }
   const me = useRef({ ...spawn(), face: 's', walk: 0, moving: false }), remote = useRef(createRemoteFigures())
   const [near, setNear] = useState(null), [found, setFound] = useState(null), [pending, setPending] = useState(null)
   const pendingRef = useRef(null)
-  const resultOf = (n, f) => ({ label: n.label, text: n.text, id: Date.now(), kind: f.found ? 'hit' : 'miss',
+  const resultOf = (n, f) => ({ label: n.label, text: f.found?.kind === 'security' ? 'Hinter der Bücherwand öffnet sich ein Zugang zum Security Room.' : n.text, id: Date.now(), kind: f.found ? 'hit' : 'miss',
     note: f.found ? 'Hier ist etwas versteckt! Was genau, entscheiden später die Karten.' : 'Hier ist nichts Verdächtiges.' })
 
   const interact = () => {
@@ -88,6 +90,7 @@ function RoomScene({ room, def, name, color, myTurn, currentName, others, code, 
       // Andere nur zeigen, solange der Spielstand sie in diesem Zimmer führt (Name/Farbe kommen aus dem Spielstand).
       const meta = new Map(L.others.map(o => [o.id, o]))
       const people = remote.current.list().filter(f => meta.has(f.id)).map(f => ({ x: f.x, y: f.y, face: f.face, walk: f.walk, moving: f.moving, color: meta.get(f.id).color, name: meta.get(f.id).name, active: meta.get(f.id).active }))
+      for (const bot of L.others.filter(player => player.bot)) people.push({ ...spawn(), face: 's', walk: 0, ...bot })
       people.push({ x: p.x, y: p.y, face: p.face, walk: p.walk, moving: p.moving, color: L.color || '#d96464', name: L.name, mine: true, active: L.myTurn })
       drawRoom(ctx, def, { t: now / 1000, reduced, hint: touch ? '✦' : 'E', near: n, people, marks: L.marks })
       raf = requestAnimationFrame(frame)
@@ -136,6 +139,8 @@ function RoomScene({ room, def, name, color, myTurn, currentName, others, code, 
         {others.map(o => <li key={o.id}><span className="ri-dot" style={{ background: o.color }}/>{o.name}</li>)}
       </ul>
       <span className={`ri-searches${searchesLeft ? '' : ' empty'}`} title="So viele Möbel darfst du bei diesem Besuch noch durchsuchen.">Durchsuchen: {searchesLeft} von {SEARCHES_PER_VISIT}</span>
+      {onSecurity && <button type="button" className="ri-leave" disabled={busy} onClick={onSecurity}>Geheimer Zugang · Security Room</button>}
+      {victims.map(victim => <button type="button" key={victim.id} className="ri-leave" disabled={busy} onClick={() => onEliminate(victim.id)}>{victim.name} eliminieren</button>)}
       <button type="button" className={`ri-leave${myTurn ? ' urgent' : ''}`} disabled={busy} onClick={() => onLeave?.()}>Raum verlassen <span aria-hidden="true">↩</span></button>
     </header>
     <p className={`ri-banner${myTurn ? ' turn' : ''}`} role="status" aria-live="polite">

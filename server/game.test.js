@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { makeRoom, join, act, view } from './game.js'
-import { PEOPLE, ROOMS, distance } from '../shared/game.js'
+import { PEOPLE, ROOMS, distance, moveTarget } from '../shared/game.js'
 const game=(n=3)=>{const r=makeRoom('ABC234');for(let i=0;i<n;i++)join(r,`Gast ${i}`);act(r,r.players[0].token,{type:'start'});return r}
 test('Sophie: Lobbygrenze, eindeutige Namen/Figuren und Gastgeber',()=>{
   const r=makeRoom('ABC234'),a=join(r,'Matin')
@@ -34,18 +34,24 @@ test('Matin: nur aktuelle Person würfelt einmal, nur erreichbare Ziele erlaubt'
   assert.throws(()=>act(r,a.token,{type:'roll'}),/bereits/)
   assert.throws(()=>act(r,a.token,{type:'move',target:[0,0]}),/nicht erreichbar/)
   assert.throws(()=>act(r,a.token,{type:'move',target:'study'}),/weit/)
-  act(r,a.token,{type:'move',target:[6,1]});assert.equal(r.phase,'action')
+  r.dice=[2,3];r.remainingSteps=5
+  act(r,a.token,{type:'move',target:[6,3]});assert.equal(r.phase,'move')
+  assert.equal(view(r,b.token).remainingSteps,2)
+  assert.throws(()=>act(r,a.token,{type:'end'}),/restlichen Schritte/)
+  act(r,a.token,{type:'move',target:[6,5]});assert.equal(r.phase,'action')
+  assert.equal(r.remainingSteps,0)
   assert.throws(()=>act(r,a.token,{type:'move',target:[6,2]}),/Würfle/)
 })
 test('Matin: Zimmerzutritt mit exakter Schrittzahl und Geheimgang',()=>{
   const r=game(),a=r.players[0]
-  r.positions[a.character]=[5,5];r.dice=[1,1];r.phase='move'
+  r.positions[a.character]=[5,5];r.dice=[1,1];r.phase='move';r.remainingSteps=1
   assert.equal(distance([5,5],'kitchen'),2)
   act(r,a.token,{type:'move',target:'kitchen'})
-  assert.equal(r.positions[a.character],'kitchen');assert.equal(r.phase,'action')
+  assert.deepEqual(r.positions[a.character],moveTarget('kitchen'));assert.equal(r.phase,'action')
+  assert.deepEqual(r.inside,{})
   act(r,a.token,{type:'end'});for(let i=1;i<r.players.length;i++)act(r,r.players[i].token,{type:'end'})
   assert.equal(r.round,2)
-  act(r,a.token,{type:'passage'});assert.equal(r.positions[a.character],'study')
+  act(r,a.token,{type:'passage'});assert.deepEqual(r.positions[a.character],moveTarget('study'))
   for(const room of ROOMS)assert.ok(Number.isFinite(distance([6,0],room.id)))
 })
 test('Nur Matin und Sophie: entfernte Aktionen sind nicht verfügbar',()=>{
@@ -64,7 +70,8 @@ test('Bestehende Räume und Zugänge bleiben nutzbar; alte Module verschwinden',
 test('Solo: würfeln, ziehen und einen weiteren eigenen Zug beginnen',()=>{
   const r=game(1),p=r.players[0]
   act(r,p.token,{type:'roll'})
-  act(r,p.token,{type:'move',target:[6,1]})
+  r.dice=[1,1];r.remainingSteps=2
+  act(r,p.token,{type:'move',target:[6,2]})
   act(r,p.token,{type:'end'})
   assert.equal(r.turn,0);assert.equal(r.round,2);assert.equal(r.phase,'roll')
   act(r,p.token,{type:'roll'});assert.equal(r.phase,'move')

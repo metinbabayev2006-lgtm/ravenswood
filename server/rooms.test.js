@@ -1,17 +1,19 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { makeRoom, join, act, view } from './game.js'
+import { moveTarget } from '../shared/game.js'
 
 const game = (n = 3) => { const r = makeRoom('ABC234'); for (let i = 0; i < n; i++) join(r, `Gast ${i}`); act(r, r.players[0].token, { type: 'start' }); return r }
-// Setzt die aktuelle Person direkt in ein Zimmer (wie nach „Zimmer betreten“) in die Phase „action“.
-const inRoom = (r, player, room = 'kitchen') => { r.positions[player.character] = room; r.phase = 'action' }
+const inRoom = (r, player, room = 'kitchen') => { r.positions[player.character] = moveTarget(room); r.phase = 'action' }
 
-test('Raum-Instanz: Betreten nur aus einem Zimmer, nur im eigenen Zug, nicht mitten in der Bewegung', () => {
+test('Raum-Instanz: Betreten nur direkt vor der Tür und im eigenen Zug', () => {
   const r = game(), [a, b] = r.players
   assert.throws(() => act(r, b.token, { type: 'enterRoom' }), /nicht am Zug/)
   assert.throws(() => act(r, a.token, { type: 'enterRoom' }), /Zimmer/) // Startfeld liegt im Flur
-  r.positions[a.character] = 'kitchen'; r.phase = 'move'; r.dice = [3, 4]
-  assert.throws(() => act(r, a.token, { type: 'enterRoom' }), /Bewegung/)
+  r.positions[a.character] = moveTarget('kitchen'); r.phase = 'move'; r.dice = [3, 4]; r.remainingSteps = 3
+  act(r, a.token, { type: 'enterRoom' })
+  assert.equal(r.inside[a.id], 'kitchen')
+  assert.equal(r.remainingSteps, 0)
 })
 
 test('Raum-Instanz: Betreten merkt sich die Brettposition und gibt den Zug weiter', () => {
@@ -19,7 +21,7 @@ test('Raum-Instanz: Betreten merkt sich die Brettposition und gibt den Zug weite
   inRoom(r, a, 'library')
   act(r, a.token, { type: 'enterRoom' })
   assert.deepEqual(view(r, b.token).inside, { [a.id]: 'library' })
-  assert.equal(r.positions[a.character], 'library') // Position bleibt gespeichert
+  assert.deepEqual(r.positions[a.character], moveTarget('library'))
   assert.equal(r.players[r.turn].id, b.id)
   assert.equal(r.phase, 'roll'); assert.equal(r.dice, null)
   // Die anderen spielen normal weiter …
@@ -40,7 +42,7 @@ test('Raum-Instanz: Wenn die Person wieder dran ist, müssen alle warten, bis si
   assert.throws(() => act(r, b.token, { type: 'roll' }), /nicht am Zug/)
   act(r, a.token, { type: 'leaveRoom' })
   assert.deepEqual(r.inside, {})
-  assert.equal(r.positions[a.character], 'dining') // Figur steht wieder an der gespeicherten Stelle
+  assert.deepEqual(r.positions[a.character], moveTarget('dining'))
   act(r, a.token, { type: 'roll' }) // kein Würfellimit im Raum, danach normales Spiel
   assert.equal(r.phase, 'move')
 })
@@ -52,7 +54,7 @@ test('Raum-Instanz: Verlassen ist auch außerhalb des eigenen Zugs möglich, abe
   act(r, a.token, { type: 'leaveRoom' }) // b ist am Zug, a darf trotzdem raus
   assert.deepEqual(r.inside, {})
   assert.equal(r.players[r.turn].id, b.id)
-  assert.equal(r.positions[a.character], 'kitchen')
+  assert.deepEqual(r.positions[a.character], moveTarget('kitchen'))
 })
 
 test('Raum-Instanz: Alleine spielen – Zug kommt direkt zurück, Weiterspielen erst nach dem Verlassen', () => {

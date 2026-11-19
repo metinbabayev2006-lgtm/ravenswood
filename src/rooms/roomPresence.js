@@ -9,7 +9,7 @@ export function occupantsByRoom(state) {
   for (const p of state.players || []) {
     const room = state.inside[p.id]
     if (!room) continue
-    ;(out[room] ||= []).push({ id: p.id, name: p.name, character: p.character, color: PEOPLE.find(c => c.id === p.character)?.color || '#e5d6b1', active: p.id === activeId })
+    ;(out[room] ||= []).push({ id: p.id, name: p.name, character: p.character, bot: p.bot, color: PEOPLE.find(c => c.id === p.character)?.color || '#e5d6b1', active: p.id === activeId })
   }
   return out
 }

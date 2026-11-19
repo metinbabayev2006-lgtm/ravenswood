@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { playStep } from './sound.js'
-import { PEOPLE, ROOMS, STARTS, roomAt, corridor, distance, corridorPath } from '../shared/game.js'
-import { boardCharacters, roomInteriorsVisible } from './rooms/boardVisibility.js'
-import { buildMysteryRoof } from './rooms/mysteryRoofs3D.js'
+import { PEOPLE, ROOMS, STARTS, roomAt, corridor, distance, corridorPath, moveTarget } from '../shared/game.js'
+import { boardCharacters } from './rooms/boardVisibility.js'
 import { buildRoomOverview } from './rooms/roomOverview3D.js'
 
 const point = pos => { const r=typeof pos==='string'&&ROOMS.find(r=>r.id===pos); return r?[r.x+2.5-9.5,r.y+2.5-9.5]:[pos[0]-9,pos[1]-9] }
@@ -20,9 +19,7 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
   const [preview,setPreview]=useState(null)
   const [follow,setFollow]=useState(()=>{try{return localStorage.getItem('ravenswood-follow')==='true'}catch{return false}})
   const [view,setView]=useState(()=>{try{return localStorage.getItem('ravenswood-camera')==='top'?'top':'3d'}catch{return '3d'}})
-  const [inspect, setInspect] = useState(false)
-  const interiors = roomInteriorsVisible(state, inspect)
-  latest.current={state,onMove,busy,follow,interiors}
+  latest.current={state,onMove,busy,follow}
   const cameraMode=decorative?'3d':view
   useEffect(()=>{
     if(!host.current)return
@@ -41,15 +38,11 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
     const label=(text,color='#e5d6b1',bg='#281b24')=>{const c=document.createElement('canvas');c.width=512;c.height=96;const ctx=c.getContext('2d');ctx.fillStyle=bg;ctx.fillRect(0,0,512,96);ctx.strokeStyle='#a17b4a';ctx.lineWidth=4;ctx.strokeRect(2,2,508,92);ctx.fillStyle=color;ctx.font='bold 40px Georgia';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,256,49,490);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;textures.push(t);return t}
     const base=box(scene,0,-.38,0,20.7,.65,20.7,'#28151b');box(scene,0,-.03,0,20,.08,20,'#8e7951')
     for(let x=0;x<19;x++)for(let z=0;z<19;z++)box(scene,x-9,.025,z-9,.98,.08,.98,(x+z)%2?'#3d3035':'#8b7a71')
-    const roomLayers = []
     for (const r of ROOMS) {
       const g = new THREE.Group()
       g.position.set(r.x - 9.5, 0, r.y - 9.5)
       scene.add(g)
-      const interior = buildRoomOverview(g, r, { box, sphere, textures })
-      const roof = buildMysteryRoof(g, r, { box, label, textures })
-      interior.visible = latest.current.interiors; roof.visible = !latest.current.interiors
-      roomLayers.push({ interior, roof })
+      buildRoomOverview(g, r, { box, sphere, textures })
       const plaque = new THREE.Mesh(new THREE.PlaneGeometry(3.8, .4), new THREE.MeshBasicMaterial({ map: label(r.name), side: THREE.DoubleSide }))
       plaque.rotation.x = -Math.PI / 2
       plaque.position.set(2.5, .22, 5.12)
@@ -73,8 +66,8 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
     const previewLayer=new THREE.Group();scene.add(previewLayer)
     const previewMat=new THREE.MeshBasicMaterial({color:0xffd786,depthTest:false,transparent:true,opacity:.95});mats.set('preview-line',previewMat)
     const clearPreview=()=>{if(!e.previewKey)return;e.previewKey='';e.previewTarget=null;previewLayer.clear();e.previewGeometry?.dispose();e.previewGeometry=null;setPreview(null)}
-    const canAct=()=>{const s=latest.current.state;return s&&s.status==='playing'&&!latest.current.busy&&s.players[s.turn]?.id===s.me&&s.phase==='move'}
-    const previewTarget=target=>{const s=latest.current.state;if(!canAct())return clearPreview();const me=s.players.find(p=>p.id===s.me),from=s.positions[me.character],cost=distance(from,target);if(JSON.stringify(from)===JSON.stringify(target)||cost>s.dice[0]+s.dice[1])return clearPreview();const key=JSON.stringify([s.version,target]);if(key===e.previewKey)return;clearPreview();e.previewKey=key;e.previewTarget=target;const f=figures.get(me.character),coords=[[f.figure.position.x,f.figure.position.z],...walkPath(from,target,f.index)],curve=new THREE.CurvePath();for(let i=1;i<coords.length;i++){const a=coords[i-1],b=coords[i];if(Math.hypot(a[0]-b[0],a[1]-b[1])>.001)curve.add(new THREE.LineCurve3(new THREE.Vector3(a[0],.31,a[1]),new THREE.Vector3(b[0],.31,b[1])))}if(curve.curves.length){e.previewGeometry=new THREE.TubeGeometry(curve,Math.max(12,coords.length*4),.045,6,false);const line=new THREE.Mesh(e.previewGeometry,previewMat);line.renderOrder=1000;previewLayer.add(line)}setPreview({target,cost,label:typeof target==='string'?ROOMS.find(r=>r.id===target).name:`Flurfeld ${target[0]+1}, ${target[1]+1}`})}
+    const canAct=()=>{const s=latest.current.state;return s&&!s.winner&&s.status==='playing'&&!latest.current.busy&&s.players[s.turn]?.id===s.me&&s.phase==='move'}
+    const previewTarget=destination=>{const target=moveTarget(destination),s=latest.current.state;if(!canAct())return clearPreview();const me=s.players.find(p=>p.id===s.me),from=s.positions[me.character],cost=distance(from,target);if(JSON.stringify(from)===JSON.stringify(target)||cost>s.remainingSteps)return clearPreview();const key=JSON.stringify([s.version,target]);if(key===e.previewKey)return;clearPreview();e.previewKey=key;e.previewTarget=target;const f=figures.get(me.character),coords=[[f.figure.position.x,f.figure.position.z],...walkPath(from,target,f.index)],curve=new THREE.CurvePath();for(let i=1;i<coords.length;i++){const a=coords[i-1],b=coords[i];if(Math.hypot(a[0]-b[0],a[1]-b[1])>.001)curve.add(new THREE.LineCurve3(new THREE.Vector3(a[0],.31,a[1]),new THREE.Vector3(b[0],.31,b[1])))}if(curve.curves.length){e.previewGeometry=new THREE.TubeGeometry(curve,Math.max(12,coords.length*4),.045,6,false);const line=new THREE.Mesh(e.previewGeometry,previewMat);line.renderOrder=1000;previewLayer.add(line)}setPreview({target,cost,label:typeof target==='string'?ROOMS.find(r=>r.id===target).name:`Flurfeld ${target[0]+1}, ${target[1]+1}`})}
     const targetAt=event=>{const rect=renderer.domElement.getBoundingClientRect();mouse.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);ray.setFromCamera(mouse,camera);if(!ray.ray.intersectPlane(ground,hit))return null;const x=Math.floor(hit.x+9.5),y=Math.floor(hit.z+9.5);if(x<0||x>18||y<0||y>18)return null;return roomAt(x,y)?.id||[x,y]}
     let press=null,dragged=false,pointerType='mouse'
     const down=event=>{press=[event.clientX,event.clientY];dragged=false;pointerType=event.pointerType||'mouse'}
@@ -85,7 +78,7 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
     renderer.domElement.addEventListener('pointerleave',pointerLeave)
     renderer.domElement.addEventListener('pointerdown',down,true)
     renderer.domElement.addEventListener('pointermove',pointerMove,true)
-    const click=event=>{if(dragged||!canAct())return;const target=targetAt(event);if(target===null)return;if(pointerType==='touch'&&JSON.stringify(e.previewTarget)!==JSON.stringify(target)){previewTarget(target);return}const s=latest.current.state,me=s.players.find(p=>p.id===s.me),from=s.positions[me.character];if(JSON.stringify(from)!==JSON.stringify(target)&&distance(from,target)<=s.dice[0]+s.dice[1])latest.current.onMove(target)}
+    const click=event=>{if(dragged||!canAct())return;const target=targetAt(event);if(target===null)return;if(pointerType==='touch'&&JSON.stringify(e.previewTarget)!==JSON.stringify(moveTarget(target))){previewTarget(target);return}const s=latest.current.state,me=s.players.find(p=>p.id===s.me),from=s.positions[me.character];if(JSON.stringify(from)!==JSON.stringify(moveTarget(target))&&distance(from,moveTarget(target))<=s.remainingSteps)latest.current.onMove(target)}
     renderer.domElement.addEventListener('click',click)
     const resize=()=>{const w=container.clientWidth,h=Math.max(280,w*.77);renderer.setSize(w,h);const aspect=w/h,span=11.8;camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix()}
     const observer=new ResizeObserver(resize);observer.observe(container);resize()
@@ -97,15 +90,13 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
     setMode(cameraMode)
     let frame,last=performance.now(),t=0
     function animate(now){const dt=Math.min((now-last)/1000,.05);last=now;t+=dt;controls.update()
-      const s=latest.current.state,me=s?.players.find(p=>p.id===s.me),canMove=s?.status==='playing'&&s.players[s.turn]?.id===s.me&&s.phase==='move'&&!latest.current.busy
+      const s=latest.current.state,me=s?.players.find(p=>p.id===s.me),canMove=s?.status==='playing'&&!s.winner&&s.players[s.turn]?.id===s.me&&s.phase==='move'&&!latest.current.busy
       if(!canMove)clearPreview()
       let movingFocus=null
       const visibleFigures = boardCharacters(s)
-      const open = roomInteriorsVisible(s, latest.current.interiors)
-      for (const layer of roomLayers) { layer.interior.visible = open; layer.roof.visible = !open }
       const key=canMove?JSON.stringify([s.version,me.character]):'none'
-      if(key!==e.markerKey){e.markerKey=key;markers.clear();if(canMove){for(let x=0;x<19;x++)for(let y=0;y<19;y++)if(corridor(x,y)&&distance(s.positions[me.character],[x,y])<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(dotGeo,dotMat);m.rotation.x=-Math.PI/2;m.position.set(x-9,.25,y-9);markers.add(m)}for(const r of ROOMS)if(r.id!==s.positions[me.character]&&distance(s.positions[me.character],r.id)<=s.dice[0]+s.dice[1]){const m=new THREE.Mesh(ringGeo,dotMat);m.rotation.x=-Math.PI/2;m.scale.set(4,4,4);m.position.set(r.x-7,2.26,r.y-7);markers.add(m)}}}
-      for(const [id,f] of figures){f.figure.visible=visibleFigures.has(id);const target=s?.positions?.[id]||STARTS[f.index];if(JSON.stringify(target)!==JSON.stringify(f.position)){const old=f.position;f.route=walkPath(old,target,f.index);f.position=target}
+      if(key!==e.markerKey){e.markerKey=key;markers.clear();if(canMove){for(let x=0;x<19;x++)for(let y=0;y<19;y++)if(corridor(x,y)&&distance(s.positions[me.character],[x,y])<=s.remainingSteps){const m=new THREE.Mesh(dotGeo,dotMat);m.rotation.x=-Math.PI/2;m.position.set(x-9,.25,y-9);markers.add(m)}for(const r of ROOMS)if(r.door.join()!==s.positions[me.character].join()&&distance(s.positions[me.character],r.door)<=s.remainingSteps){const m=new THREE.Mesh(ringGeo,dotMat);m.rotation.x=-Math.PI/2;m.scale.set(1.5,1.5,1.5);m.position.set(r.door[0]-9,.27,r.door[1]-9);markers.add(m)}}}
+      for(const [id,f] of figures){f.figure.visible=visibleFigures.has(id);const target=s?.positions?.[id]||STARTS[f.index];if(JSON.stringify(target)!==JSON.stringify(f.position)){const old=f.position;f.route.push(...walkPath(old,target,f.index));f.position=target}
         if(!f.figure.visible){const p=point(target);f.figure.position.x=p[0];f.figure.position.z=p[1];f.route=[]}
         if(reducedMotion&&f.route.length){const end=f.route.at(-1);f.figure.position.x=end[0];f.figure.position.z=end[1];f.route=[]}
         const next=f.route[0];if(next&&f.figure.visible){movingFocus=f.figure.position;playStep();const dx=next[0]-f.figure.position.x,dz=next[1]-f.figure.position.z,len=Math.hypot(dx,dz),step=dt*5;if(len<=step){f.figure.position.x=next[0];f.figure.position.z=next[1];f.route.shift()}else{f.figure.position.x+=dx/len*step;f.figure.position.z+=dz/len*step;f.figure.rotation.y=Math.atan2(dx,dz)}f.limbs.forEach((limb,i)=>limb.rotation.x=Math.sin(t*13+(i<2?0:Math.PI))*.45)}else f.limbs.forEach(l=>l.rotation.x*=.7)
@@ -124,10 +115,9 @@ export default function ThreeBoard({state,onMove,busy,decorative=false,fallback,
   const change=value=>{setView(value);try{localStorage.setItem('ravenswood-camera',value)}catch{}}
   const me=state?.players.find(p=>p.id===state.me),moving=state?.phase==='move'&&state?.players[state.turn]?.id===state.me
   return <div className={`three-manor ${decorative?'three-decorative':''}`}>
-    {state?.status!=='playing'&&<div className="camera-controls" role="group" aria-label="Villa vor Spielbeginn ansehen"><button type="button" aria-pressed={interiors} onClick={()=>setInspect(v=>!v)}>{interiors?'Dächer schließen':'Villa ansehen'}</button><span>{interiors?'Einrichtung ansehen · vor Spielbeginn':'Zimmer bleiben im Spiel verborgen'}</span></div>}
     {!decorative&&<div className="camera-controls" role="group" aria-label="Brettansicht"><span>KAMERA</span>{[['3d','3D'],['top','Von oben']].map(([id,label])=><button key={id} type="button" aria-pressed={cameraMode===id} onClick={()=>change(id)}>{label}</button>)}<button type="button" aria-label="Karte nach links drehen" onClick={()=>engine.current?.rotate(Math.PI/6)}>↶</button><button type="button" aria-label="Karte nach rechts drehen" onClick={()=>engine.current?.rotate(-Math.PI/6)}>↷</button><button type="button" onClick={()=>engine.current?.setMode(cameraMode)}>Zurücksetzen</button></div>}
     <div className="three-viewport" ref={host} role="img" aria-label="Dreidimensionale Villa mit laufenden Spielfiguren"/>
     {!decorative&&<div className="board-extras"><button type="button" aria-pressed={follow} onClick={()=>{setFollow(!follow);try{localStorage.setItem('ravenswood-follow',String(!follow))}catch{}}}>Kamera folgt: {follow?'An':'Aus'}</button><span>Goldener Ring & Pfeil: aktive Figur</span></div>}
-    {!decorative&&<><div className="route-preview" role="status" aria-live="polite">{preview&&moving&&!busy?<><span><strong>{preview.label}</strong> · {preview.cost} von {state.dice[0]+state.dice[1]} Schritten</span><button type="button" onClick={()=>onMove(preview.target)}>Hierhin ziehen →</button></>:<span>Wegvorschau: ein erreichbares Ziel berühren oder mit der Maus darüberfahren.</span>}</div><p className="camera-caption">{moving?'Klicke auf einen goldenen Punkt oder einen markierten Raum. Deine Figur läuft dorthin.':'Ziehen: Karte drehen · Mausrad / zwei Finger: zoomen'}</p><div className="board-keyboard-targets" aria-label="Erreichbare Ziele für Tastaturbedienung">{moving&&!busy&&Array.from({length:361},(_,i)=>[i%19,Math.floor(i/19)]).filter(p=>corridor(...p)&&JSON.stringify(p)!==JSON.stringify(state.positions[me.character])&&distance(state.positions[me.character],p)<=state.dice[0]+state.dice[1]).map(p=><button key={p.join(',')} onFocus={()=>engine.current?.preview(p)} onClick={()=>onMove(p)}>Zum Flurfeld {p[0]+1}, {p[1]+1} ziehen</button>)}</div></>}
+    {!decorative&&<><div className="route-preview" role="status" aria-live="polite">{preview&&moving&&!busy?<><span><strong>{preview.label}</strong> · {preview.cost} von {state.remainingSteps} Schritten</span><button type="button" onClick={()=>onMove(preview.target)}>Hierhin ziehen →</button></>:<span>Wegvorschau: ein erreichbares Ziel berühren oder mit der Maus darüberfahren.</span>}</div><p className="camera-caption">{moving?'Klicke auf einen goldenen Punkt oder einen markierten Raum. Deine Figur läuft dorthin.':'Ziehen: Karte drehen · Mausrad / zwei Finger: zoomen'}</p><div className="board-keyboard-targets" aria-label="Erreichbare Ziele für Tastaturbedienung">{moving&&!busy&&Array.from({length:361},(_,i)=>[i%19,Math.floor(i/19)]).filter(p=>corridor(...p)&&JSON.stringify(p)!==JSON.stringify(state.positions[me.character])&&distance(state.positions[me.character],p)<=state.remainingSteps).map(p=><button key={p.join(',')} onFocus={()=>engine.current?.preview(p)} onClick={()=>onMove(p)}>Zum Flurfeld {p[0]+1}, {p[1]+1} ziehen</button>)}</div></>}
   </div>
 }

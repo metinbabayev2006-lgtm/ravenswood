@@ -1,29 +1,28 @@
-# Ravenswood · Spielbrett & Multiplayer
+# Case Unknown · Spielbrett & Multiplayer
 
-Diese Fassung enthält ausschließlich die Aufgabenbereiche **Matin und Sophie**.
+Die lokale Fassung enthält den Normalmodus und den Imposter-Modus.
 
 ## Matin
-Spielbrett und Spielfiguren
+
+### Spielbrett und Spielfiguren
+
 - Drehbares 3D-Spielbrett mit neun Zimmern, sichtbaren Türen und einer Draufsicht.
 - Sechs farbige Spielfiguren mit Markierung der eigenen und der aktiven Figur.
 - Animierte Bewegungen entlang der Flurwege und hervorgehobene erreichbare Felder.
-- Zimmer auf dem Spielbrett an die Einrichtung der begehbaren 2,5D-Räume angepasst.
-- Dächer nach einem ersten Entwurf wieder entfernt. Figuren in Zimmern bleiben auf dem Brett ausgeblendet.
-Würfel, Bewegung und Türen
-- Zwei serverseitig gewürfelte Würfel mit Wurfanimation und Anzeige der verfügbaren Schritte.
-- Verbleibende Schritte nach einem Teilzug gespeichert und angezeigt.
-- Zugwechsel und Geheimgänge zwischen den gegenüberliegenden Eckzimmern umgesetzt.
-- Figuren halten vor der Zimmertür. „Untersuchen“ erscheint nur direkt am Eingang und der Spieler entscheidet selbst, ob er hineingeht.
-Erweiterungen für die aktuelle lokale Fassung
-- Normalmodus ohne Mörder und Imposter-Modus mit geheimer Mörderrolle vorgesehen.
-- Regeln für das Ausscheiden, den Zuschauermodus und das Entfernen der Figur beim Verlassen der Partie festgelegt.
-- Einen versteckten Security Room hinter der Bücherwand im Arbeitszimmer vorgesehen. Wer den Eingang entdeckt, kann im Imposter-Modus die Kameras der neun Zimmer aufrufen.
-- Anforderungen für flüssigere Multiplayer-Bewegungen und die Tests mit mehreren Spielern und Bots formuliert.
-Veröffentlichung und Zusammenarbeit
+- Zimmerdarstellung an die Einrichtung der 2,5D-Räume angepasst. Figuren in Zimmern bleiben auf dem offenen Spielbrett ausgeblendet.
+
+### Würfel, Bewegung und Türen
+
+- Zwei serverseitig gewürfelte Würfel mit Wurfanimation, einmal je Zug.
+- Servergeprüfte Bewegung nach Schrittzahl, erreichbare Ziele werden hervorgehoben.
+- Erreichbare Türen als Bewegungsziele. **Untersuchen** erscheint direkt vor einer Tür. Teilzüge behalten die übrigen Würfelschritte.
+- Zugwechsel und Geheimgänge zwischen gegenüberliegenden Eckzimmern.
+
+### Veröffentlichung und Zusammenarbeit
+
 - Erste Demo als Ravenswood auf GitHub bereitgestellt und den automatischen Offline-Download eingerichtet.
-- Den Pull Request für die 2,5D-Raum-Instanzen übernommen und die Darstellung auf dem Spielbrett daran angepasst.
-- Die Online-Fassung für den Multiplayer-Test aktualisieren lassen und den neuen Namen Case Unknown festgelegt.
-- Die jüngsten Änderungen zur lokalen Erprobung vorgesehen.
+- Den Pull Request für die 2,5D-Raum-Instanzen übernommen.
+- Die Online-Fassung für den Multiplayer-Test aktualisieren lassen und den Namen Case Unknown festgelegt.
 
 ## Sophie
 
@@ -31,15 +30,21 @@ Veröffentlichung und Zusammenarbeit
 - Private Lobbys für 1–6 Menschen; Code und Einladungslink lassen sich kopieren.
 - Einladungslinks öffnen direkt den Beitrittsmodus.
 - Exklusive Figurenauswahl; nur der Gastgeber startet die Runde.
-- Gemeinsamer, servergespeicherter Spielstand; Synchronisierung ca. alle 1,2 Sekunden.
+- Gemeinsamer, servergespeicherter Spielstand; Der lokale Client fragt den Spielstand etwa alle 400 ms ab.
 - Rückkehr nach Neuladen und gespeicherte Räume auf demselben Gerät.
-- Auf Wunsch des Nutzers **keine KI-Mitspieler**.
+- Der Gastgeber kann freie Plätze in der Lobby mit Bots füllen. **Spiel verlassen** entfernt die Figur und gibt den Platz frei.
 
-**Jason und Max:** Karten, Kartenauswahl, Notizen, Verdacht und Anklage sind aus der aktiven Oberfläche und Serverlogik entfernt. Die Zimmerflächen bleiben für Matins Spielbrett und Zimmerzutritt nötig. Diese Fassung ist eine spielbare Multiplayer-Bewegungsdemo und kein vollständiges Detektivspiel mit Falllösung oder Siegbedingung.
+**Jason und Max:** Karten, Kartenauswahl, Notizen, Verdacht und Anklage sind aus der aktiven Oberfläche und Serverlogik entfernt. Die Zimmerflächen bleiben für Matins Spielbrett und Zimmerzutritt nötig. Der Normalmodus behält den freien Multiplayer-Spielablauf.
+
+## Imposter-Modus
+
+- Ab zwei Teilnehmern erhält eine Figur heimlich die Mörderrolle. Sie kann andere Figuren in derselben Rauminstanz eliminieren. Ausgeschiedene sehen das Spielbrett als Zuschauer.
+- Der geheime Zugang zum Security Room liegt hinter der Bücherwand im Arbeitszimmer. Wer ihn entdeckt, kann von dort die Kameras der neun Zimmer auswählen.
+- Diese Spielmodi und die neuen Regeln laufen derzeit lokal.
 
 ## Raum-Instanzen (2,5D)
 
-- Steht die eigene Figur in einem Zimmer, öffnet **„Raum untersuchen“** (im eigenen Zug) eine 2,5D-Ansicht dieses Zimmers. Alle neun Zimmer sind eingerichtet (Möbel mit Kollision, Licht, Fenster, Tür).
+- Steht die eigene Figur direkt vor einer Tür, öffnet **„Untersuchen“** im eigenen Zug eine 2,5D-Ansicht des Zimmers. Alle neun Zimmer sind eingerichtet (Möbel mit Kollision, Licht, Fenster, Tür).
 - Laufen mit **WASD / Pfeiltasten** (am Handy per Steuerkreuz), **E** durchsucht Möbel, die Tür verlässt den Raum.
 - **Verstecke:** Zu Beginn jedes Spiels lost der Server pro Zimmer aus, in welchem Möbel etwas liegt (`shared/roomSpots.js`: `CLUES_PER_ROOM`). Pro Raumbesuch darf man `SEARCHES_PER_VISIT` (2) Möbel durchsuchen. Verstecke und Funde bleiben auf dem Server; jede Person sieht nur ihre eigenen Ergebnisse. Ein Fund ist derzeit `{ kind: 'hinweis' }` – für die Karten später `hideClues()` in `server/game.js` anpassen.
 - Im Raum gilt **kein Würfellimit**. Die Figur verschwindet vom Brett, ihre Position bleibt gespeichert. Auf dem Brett werden keine Namen über den Zimmern angezeigt. Der Zug geht an die Nächsten weiter – kommt man wieder an die Reihe, **warten alle**, bis man den Raum verlassen hat.
@@ -50,14 +55,13 @@ Veröffentlichung und Zusammenarbeit
 ## Zimmergestaltung und verdeckte Räume
 
 - Die 3D-Miniaturen verwenden die Einrichtung aus `src/rooms/roomData.js`. Möbelpositionen und Farben entsprechen den begehbaren Räumen; Böden, Teppiche und Wandbilder verwenden die gemeinsamen Zeichenroutinen.
-- Dunkle Walmdächer mit Schieferziegeln, Kupferkanten und Schornsteinen verdecken die Zimmer während des Spiels, auch in der Draufsicht. Fenster und Dächer verändern sich nicht durch die Belegung.
-- **Villa ansehen** öffnet die Dächer auf der Startseite und in der Lobby. Nach Spielbeginn ist die Einrichtung auf dem Brett immer verdeckt.
+- Die Zimmer sind in der 3D-Ansicht und der Draufsicht offen.
 - Nur beigetretene Spieler erhalten sichtbare Brettfiguren. Personen in Zimmern werden auf dem Brett einschließlich Namen, Ring und Pfeil ausgeblendet. Innerhalb derselben begehbaren Rauminstanz bleiben Mitspieler sichtbar.
-- `src/rooms/boardVisibility.js` regelt die Sichtbarkeit für das 3D-Brett und das Ersatzbrett; `server/boardVisibility.test.js` prüft Teilnehmerzahl, Zimmerwechsel und die Sperre der Einrichtungsvorschau im laufenden Spiel.
+- `src/rooms/boardVisibility.js` regelt die Sichtbarkeit für das 3D-Brett und das Ersatzbrett; `server/boardVisibility.test.js` prüft Teilnehmerzahl, Zimmerwechsel und die Sichtbarkeit der Figuren beim Raumwechsel.
 
 ## Online spielen
 
-[Spielbrett öffnen](https://ravenswood.dazzlingelk.chatgpt.site)
+[Veröffentlichte Fassung öffnen](https://ravenswood.dazzlingelk.chatgpt.site). Der Imposter-Modus und die neuen Regeln sind im lokal startbaren GitHub-Stand verfügbar.
 
 ## Lokal entwickeln
 
