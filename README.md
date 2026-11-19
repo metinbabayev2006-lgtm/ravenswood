@@ -3,13 +3,27 @@
 Diese Fassung enthält ausschließlich die Aufgabenbereiche **Matin und Sophie**.
 
 ## Matin
-
-- Spielbrett mit neun betretbaren Zimmerfeldern und sichtbaren Türen.
-- Sechs farbige Spielfiguren; die eigene Figur ist markiert.
-- Zwei serverseitig gewürfelte Würfel, einmal je Zug.
-- Servergeprüfte Bewegung nach Schrittzahl, erreichbare Ziele werden hervorgehoben.
-- Eigener Knopf **„Zimmer betreten“** mit Auswahl erreichbarer Zimmer und Schrittangabe.
-- Zugwechsel und Geheimgänge zwischen gegenüberliegenden Eckzimmern.
+Spielbrett und Spielfiguren
+- Drehbares 3D-Spielbrett mit neun Zimmern, sichtbaren Türen und einer Draufsicht.
+- Sechs farbige Spielfiguren mit Markierung der eigenen und der aktiven Figur.
+- Animierte Bewegungen entlang der Flurwege und hervorgehobene erreichbare Felder.
+- Zimmer auf dem Spielbrett an die Einrichtung der begehbaren 2,5D-Räume angepasst.
+- Dächer nach einem ersten Entwurf wieder entfernt. Figuren in Zimmern bleiben auf dem Brett ausgeblendet.
+Würfel, Bewegung und Türen
+- Zwei serverseitig gewürfelte Würfel mit Wurfanimation und Anzeige der verfügbaren Schritte.
+- Verbleibende Schritte nach einem Teilzug gespeichert und angezeigt.
+- Zugwechsel und Geheimgänge zwischen den gegenüberliegenden Eckzimmern umgesetzt.
+- Figuren halten vor der Zimmertür. „Untersuchen“ erscheint nur direkt am Eingang und der Spieler entscheidet selbst, ob er hineingeht.
+Erweiterungen für die aktuelle lokale Fassung
+- Normalmodus ohne Mörder und Imposter-Modus mit geheimer Mörderrolle vorgesehen.
+- Regeln für das Ausscheiden, den Zuschauermodus und das Entfernen der Figur beim Verlassen der Partie festgelegt.
+- Einen versteckten Security Room hinter der Bücherwand im Arbeitszimmer vorgesehen. Wer den Eingang entdeckt, kann im Imposter-Modus die Kameras der neun Zimmer aufrufen.
+- Anforderungen für flüssigere Multiplayer-Bewegungen und die Tests mit mehreren Spielern und Bots formuliert.
+Veröffentlichung und Zusammenarbeit
+- Erste Demo als Ravenswood auf GitHub bereitgestellt und den automatischen Offline-Download eingerichtet.
+- Den Pull Request für die 2,5D-Raum-Instanzen übernommen und die Darstellung auf dem Spielbrett daran angepasst.
+- Die Online-Fassung für den Multiplayer-Test aktualisieren lassen und den neuen Namen Case Unknown festgelegt.
+- Die jüngsten Änderungen zur lokalen Erprobung vorgesehen.
 
 ## Sophie
 
